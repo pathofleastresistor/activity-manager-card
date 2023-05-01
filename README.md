@@ -5,8 +5,19 @@ This was designed to solve a personal need and I'm now trying to prepare it for 
 A Lovelace card designed as a companion to the [Activity Manager](https://github.com/pathofleastresistor/activity-manager) component.
 
 ## Installation
+
+### Manually
+1. Copy activity-manager.js into your `<config>/<www>` folder
+2. Add `activity-manager.js` as a dashboard resource.
+
+
 ### HACS
-Add this repository as a Lovelace respository in HACS
+
+1. Open the HACS section of Home Assistant.
+2. Click the "..." button in the top right corner and select "Custom Repositories."
+3. In the window that opens paste this Github URL.
+4. Select "Integration"
+5. In the window that opens when you select it click om "Install This Repository in HACS"
 
 ## Usage
 | Field | Required| Description |
