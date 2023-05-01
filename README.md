@@ -9,18 +9,27 @@ A Lovelace card designed as a companion to the [Activity Manager](https://github
 Add this repository as a Lovelace respository in HACS
 
 ## Usage
+| Field | Required| Description |
+| - | -| - |
+| header | no | Title of the card |
+| category | no | Filter activities to a specific category |
+| mode | no| Set to "manage" if you want the manager interface. Defaults to basic mode.|
+
 ```
 type: custom:activity-manager-card
 header: Home
 category: Home
 mode: manage
 ```
+![](images/manager.png)
 
-| Field | Required| Description |
-| - | -| - |
-| header | no | Title of the card |
-| category | no | Filter activities to a specific category |
-| mode | no| Set to "manage" if you want the manager interface. Defaults to basic mode.|
+```
+type: custom:activity-manager-card
+header: Home
+category: Home
+```
+![](images/basic.png)
+
 
 ## More information
 * Activities are stored in .activities_list.json in your `<config>` folder
