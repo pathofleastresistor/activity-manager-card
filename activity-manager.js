@@ -14,14 +14,7 @@ class ActivityManagerCard extends LitElement{
     constructor() {
         super();
         this._activities = []
-        this.addEventListener("my-event", this.handleLoaded);
     }
-
-    handleLoaded(e) {
-        console.log("Listening", ' Message: ', e)
-        this.fetchData();
-    }
-
 
     setConfig(config) {
         this._config = config;
@@ -42,13 +35,14 @@ class ActivityManagerCard extends LitElement{
     }
 
     getDueTemplate(item) {
-        return html`
-            <div class="${(item.difference < 0) ? "unsafe" : "safe" }"">
-            Due ${(item.difference > 0) ? `in `:``}
-            ${Math.abs(item.difference)}
-            ${item.time_unit}${(Math.abs(item.difference) > 1) ? `s` : ``}
-            ${(item.difference < 0) ? `ago` : ``}
-            </div>`
+        return html`${this.formatTimeAgo(item.due)}`
+        // return html`
+        //     <div class="${(item.difference < 0) ? "unsafe" : "safe" }"">
+        //     Due ${(item.difference > 0) ? `in `:``}
+        //     ${Math.abs(item.difference)}
+        //     ${item.time_unit}${(Math.abs(item.difference) > 1) ? `s` : ``}
+        //     ${(item.difference < 0) ? `ago` : ``}
+        //     </div>`
     }
 
     getActionButton(item) {
@@ -140,7 +134,7 @@ class ActivityManagerCard extends LitElement{
                 const now = new Date();
                 const difference = (due - now) / (1000 * 60 * 60 * 24)
 
-                return { ...item, difference: difference, time_unit: "day" }
+                return { ...item, due: due, difference: difference, time_unit: "day" }
             })
             .filter(item => {
                 if("category" in this._config)
@@ -242,6 +236,31 @@ class ActivityManagerCard extends LitElement{
         color: var(--error-color);
     }
     `;
+
+    formatTimeAgo(date) {
+        const formatter = new Intl.RelativeTimeFormat(undefined, {
+            numeric: 'auto'
+        })
+
+        const DIVISIONS = [
+            { amount: 60, name: 'seconds' },
+            { amount: 60, name: 'minutes' },
+            { amount: 24, name: 'hours' },
+            { amount: 7, name: 'days' },
+            { amount: 4.34524, name: 'weeks' },
+            { amount: 12, name: 'months' },
+            { amount: Number.POSITIVE_INFINITY, name: 'years' }
+        ]
+        let duration = (date - new Date()) / 1000
+
+        for (let i = 0; i < DIVISIONS.length; i++) {
+          const division = DIVISIONS[i]
+          if (Math.abs(duration) < division.amount) {
+            return formatter.format(Math.round(duration), division.name)
+          }
+          duration /= division.amount
+        }
+    }
 }
 
 customElements.define("activity-manager-card", ActivityManagerCard);
