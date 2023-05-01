@@ -21,14 +21,18 @@ header: Home
 category: Home
 mode: manage
 ```
-![](images/manager.png)
+<p align="center">
+  <img width="300" src="images/manager.png">
+</p>
 
 ```
 type: custom:activity-manager-card
 header: Home
 category: Home
 ```
-![](images/basic.png)
+<p align="center">
+  <img width="300" src="images/basic.png">
+</p>
 
 
 ## More information
