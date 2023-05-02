@@ -35,22 +35,23 @@ class ActivityManagerCard extends LitElement{
         this._runOnce = false
     }
 
-    connectedCallback() {
-        super.connectedCallback();
-    }
-
-    disconnectedCallback() {
-        super.disconnectedCallback();
-    }
-
     set hass(hass) {
         this._hass = hass;
         if (!this._runOnce) {
+            // Update when loading
             this.fetchData()
+
+            // Update once an hour
+            this._interval = setInterval(() => {
+                this.fetchData(hass)
+            }, 60000);
+
+            // Update when changes are made
             this._hass.connection.subscribeEvents(
                 () => this.fetchData(),
                 "activity_manager_updated"
             );
+
             this._runOnce = true;
         }
     }
