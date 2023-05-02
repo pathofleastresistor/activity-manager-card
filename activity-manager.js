@@ -35,14 +35,11 @@ class ActivityManagerCard extends LitElement{
     }
 
     getDueTemplate(item) {
-        return html`${this.formatTimeAgo(item.due)}`
-        // return html`
-        //     <div class="${(item.difference < 0) ? "unsafe" : "safe" }"">
-        //     Due ${(item.difference > 0) ? `in `:``}
-        //     ${Math.abs(item.difference)}
-        //     ${item.time_unit}${(Math.abs(item.difference) > 1) ? `s` : ``}
-        //     ${(item.difference < 0) ? `ago` : ``}
-        //     </div>`
+        return html`
+        <div class="${(item.difference < 0) ? "unsafe" : "safe"}"">
+            ${this.formatTimeAgo(item.due)}
+        </div>
+        `;
     }
 
     getActionButton(item) {
