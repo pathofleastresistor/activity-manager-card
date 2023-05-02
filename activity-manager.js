@@ -37,22 +37,20 @@ class ActivityManagerCard extends LitElement{
 
     connectedCallback() {
         super.connectedCallback();
-        window.addEventListener('config-changed', (e) => this.fetchData());
     }
 
     disconnectedCallback() {
-    window.removeEventListener('config-changed', (e) => this.fetchData());
-    super.disconnectedCallback();
+        super.disconnectedCallback();
     }
 
     set hass(hass) {
         this._hass = hass;
-        //this.fetchData()
         if (!this._runOnce) {
             this.fetchData()
-            // this._interval = setInterval(() => {
-            //     this.fetchData(hass)
-            // }, 20000);
+            this._hass.connection.subscribeEvents(
+                () => this.fetchData(),
+                "activity_manager_updated"
+            );
             this._runOnce = true;
         }
     }
@@ -177,14 +175,6 @@ class ActivityManagerCard extends LitElement{
             frequency: parseInt(frequency)
         });
 
-        const event = new Event("config-changed", {
-            bubbles: true,
-            composed: true,
-        });
-        event.detail = { msg: "hello world" };
-        console.log("Dispatch: ", event)
-        this.dispatchEvent(event);
-
         return result;
     }
 
@@ -203,15 +193,6 @@ class ActivityManagerCard extends LitElement{
             item_id: id,
         });
 
-
-        const event = new Event("config-changed", {
-            bubbles: true,
-            composed: true,
-        });
-        event.detail = { msg: "hello world" };
-        console.log("Dispatch: ", event)
-        this.dispatchEvent(event);
-
         return result;
     }
 
@@ -228,14 +209,6 @@ class ActivityManagerCard extends LitElement{
             item_id: item_id,
         });
 
-        const event = new Event("config-changed", {
-            bubbles: true,
-            composed: true,
-        });
-        event.detail = { msg: "hello world" };
-        console.log("Dispatch: ", event)
-        this.dispatchEvent(event);
-
         return result;
     }
 
@@ -244,8 +217,6 @@ class ActivityManagerCard extends LitElement{
         const item_id = ev.target.dataset.amId;
         console.log("Item id2: " + item_id)
         this._remove_activity(item_id);
-
-
     }
 
     static styles = css`
