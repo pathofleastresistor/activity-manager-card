@@ -35,14 +35,24 @@ class ActivityManagerCard extends LitElement{
         this._runOnce = false
     }
 
+    connectedCallback() {
+        super.connectedCallback();
+        window.addEventListener('config-changed', (e) => this.fetchData());
+    }
+
+    disconnectedCallback() {
+    window.removeEventListener('config-changed', (e) => this.fetchData());
+    super.disconnectedCallback();
+    }
+
     set hass(hass) {
         this._hass = hass;
-        this.fetchData()
+        //this.fetchData()
         if (!this._runOnce) {
             this.fetchData()
-            this._interval = setInterval(() => {
-                this.fetchData(hass)
-            }, 20000);
+            // this._interval = setInterval(() => {
+            //     this.fetchData(hass)
+            // }, 20000);
             this._runOnce = true;
         }
     }
@@ -166,8 +176,18 @@ class ActivityManagerCard extends LitElement{
             category: category,
             frequency: parseInt(frequency)
         });
+
+        const event = new Event("config-changed", {
+            bubbles: true,
+            composed: true,
+        });
+        event.detail = { msg: "hello world" };
+        console.log("Dispatch: ", event)
+        this.dispatchEvent(event);
+
         return result;
     }
+
     add_activity(ev) {
         ev.stopPropagation();
         const activity_name = this.shadowRoot.querySelector("#activity-input").value
@@ -183,17 +203,23 @@ class ActivityManagerCard extends LitElement{
             item_id: id,
         });
 
+
+        const event = new Event("config-changed", {
+            bubbles: true,
+            composed: true,
+        });
+        event.detail = { msg: "hello world" };
+        console.log("Dispatch: ", event)
+        this.dispatchEvent(event);
+
         return result;
     }
+
     update_activity(ev) {
         ev.stopPropagation();
         const item_id = ev.target.dataset.amId;
         this._update_activity(
             item_id).then(() => this.fetchData());
-
-        console.log("Fireing",'1---', this.isRoot)
-        const event = new Event('my-event', {bubbles: true, composed: true});
-        this.dispatchEvent(event);
     }
 
     _remove_activity = async (item_id) => {
@@ -202,13 +228,24 @@ class ActivityManagerCard extends LitElement{
             item_id: item_id,
         });
 
+        const event = new Event("config-changed", {
+            bubbles: true,
+            composed: true,
+        });
+        event.detail = { msg: "hello world" };
+        console.log("Dispatch: ", event)
+        this.dispatchEvent(event);
+
         return result;
     }
+
     remove_activity(ev) {
         ev.stopPropagation();
         const item_id = ev.target.dataset.amId;
         console.log("Item id2: " + item_id)
-        this._remove_activity(item_id).then(() => this.fetchData());
+        this._remove_activity(item_id);
+
+
     }
 
     static styles = css`
