@@ -31,7 +31,7 @@ class ActivityManagerCard extends LitElement{
           throw new Error("category must be specified");
         }
         this._config = config;
-        this.header = this._config["header"] || "Activities";
+        this.header = this._config.header || "Activities";
         this._runOnce = false
     }
 
@@ -65,7 +65,7 @@ class ActivityManagerCard extends LitElement{
     }
 
     getActionButton(item) {
-        if (!("mode" in this._config) || this._config["mode"] != "manage")
+        if (!("mode" in this._config) || this._config.mode != "manage")
             return html`
             <div class="right">
                 <mwc-button class="button" @click=${this.update_activity} data-am-id=${item.id}>
@@ -91,7 +91,7 @@ class ActivityManagerCard extends LitElement{
     }
 
     getAddForm() {
-        if (this._config["mode"] == "manage")
+        if (this._config.mode == "manage")
             return html`
             <hr />
             <form>
@@ -122,7 +122,7 @@ class ActivityManagerCard extends LitElement{
                 <div class="grid-container">
                     ${repeat(
                         this._activities,
-                        (activity) => activity.category,
+                        (activity) => activity.name,
                         (activity) => html`
                             <div>
                                 ${activity.name}
@@ -216,7 +216,6 @@ class ActivityManagerCard extends LitElement{
     remove_activity(ev) {
         ev.stopPropagation();
         const item_id = ev.target.dataset.amId;
-        console.log("Item id2: " + item_id)
         this._remove_activity(item_id);
     }
 
