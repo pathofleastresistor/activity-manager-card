@@ -17,6 +17,9 @@ class ActivityManagerCard extends LitElement{
     }
 
     setConfig(config) {
+        if (!config.category) {
+          throw new Error("category must be specified");
+        }
         this._config = config;
         this.header = this._config["header"] || "Activities";
         this._runOnce = false
@@ -73,13 +76,13 @@ class ActivityManagerCard extends LitElement{
             return html`
             <hr />
             <form>
-                <div class="form-grid-3" >
-                    <ha-textfield
-                        type="text"
+                <div class="form-grid-2" >
+                    <input
+                        type="hidden"
                         id="category-input"
                         placeholder="Category"
                         value="${this._config["category"]}">
-                    </ha-textfield>
+                    </input>
 
                     <ha-textfield type="text" id="activity-input" placeholder="Activity">
                     </ha-textfield>
@@ -209,6 +212,13 @@ class ActivityManagerCard extends LitElement{
         padding-top: 10px;
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
+        align-items: center;
+        gap: 10px;
+    }
+    .form-grid-2 {
+        padding-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         align-items: center;
         gap: 10px;
     }
