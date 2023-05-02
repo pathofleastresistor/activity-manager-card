@@ -16,7 +16,7 @@ A Lovelace card designed as a companion to the [Activity Manager](https://github
 1. Open the HACS section of Home Assistant.
 2. Click the "..." button in the top right corner and select "Custom Repositories."
 3. In the window that opens paste this Github URL.
-4. Select "Integration"
+4. Select "Lovelace"
 5. In the window that opens when you select it click om "Install This Repository in HACS"
 
 ## Usage
