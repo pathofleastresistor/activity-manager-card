@@ -290,19 +290,20 @@ class ActivityManagerCard extends LitElement{
 
 class ActivityManagerCardEditor extends LitElement {
     setConfig(config) {
-      this._config = config;
+        this._config = config;
     }
+
     get _category() {
         return this._config?.category || '';
-      }
+    }
 
     configChanged(newConfig) {
-      const event = new Event("config-changed", {
-        bubbles: true,
-        composed: true,
-      });
-      event.detail = { config: newConfig };
-      this.dispatchEvent(event);
+        const event = new Event("config-changed", {
+            bubbles: true,
+            composed: true,
+        });
+        event.detail = { config: newConfig };
+        this.dispatchEvent(event);
     }
 }
 
