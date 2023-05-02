@@ -1,6 +1,16 @@
 import { LitElement, html, until, css, repeat } from "https://cdn.jsdelivr.net/gh/lit/dist@2/all/lit-all.min.js";
 
 class ActivityManagerCard extends LitElement{
+    static getConfigElement() {
+      return document.createElement("activity-manager-card-editor");
+    }
+
+    static getStubConfig() {
+        return {
+            category: "Home",
+            mode: "manage"
+        }
+      }
 
     // Define fields that will trigger re-rendering when changed
     static get properties() {
@@ -270,4 +280,30 @@ class ActivityManagerCard extends LitElement{
     }
 }
 
+class ActivityManagerCardEditor extends LitElement {
+    setConfig(config) {
+      this._config = config;
+    }
+    get _category() {
+        return this._config?.category || '';
+      }
+
+    configChanged(newConfig) {
+      const event = new Event("config-changed", {
+        bubbles: true,
+        composed: true,
+      });
+      event.detail = { config: newConfig };
+      this.dispatchEvent(event);
+    }
+}
+
 customElements.define("activity-manager-card", ActivityManagerCard);
+customElements.define("activity-manager-card-editor", ActivityManagerCardEditor);
+
+window.customCards = window.customCards || [];
+window.customCards.push({
+    type: "activity-manager-card",
+    name: "Activity Manager Card",
+    preview: true, // Optional - defaults to false
+});
