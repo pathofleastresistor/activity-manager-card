@@ -7,8 +7,7 @@ class ActivityManagerCard extends LitElement{
 
     static getStubConfig() {
         return {
-            category: "Home",
-            mode: "manage"
+            category: "Activities"
         }
       }
 
@@ -31,7 +30,7 @@ class ActivityManagerCard extends LitElement{
           throw new Error("category must be specified");
         }
         this._config = config;
-        this.header = this._config.header || "Activities";
+        this.header = this._config.category || "Activities";
         this._runOnce = false
     }
 
