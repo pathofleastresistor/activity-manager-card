@@ -116,38 +116,55 @@ class ActivityManagerCard extends LitElement{
 
     render() {
         return html`
-        <ha-card header=${this.header}>
-            <ha-icon @click=${this.switch_mode} id="settings" icon="mdi:cog"></ha-icon>
-            <div class="card-content">
-                <div class="grid-container">
-                    ${repeat(
-                        this._activities,
-                        (activity) => activity.name,
-                        (activity) => html`
-                            <div>
-                                ${activity.name}
-                            </div>
-                            ${this.getDueTemplate(activity)}
-                            ${this.getActionButton(activity)}
-                            ${this.getRemoveButton(activity)}`
-                    )}
-                </div>
-                <div class="grid-container">
+        <div id="card">
+            <ha-card header=${this.header} id="inner-card">
+                <ha-icon @click=${this.switch_mode} id="settings" icon="mdi:cog"></ha-icon>
+                <div class="card-content">
+                    <div class="grid-container">
+                        ${repeat(
+                            this._activities,
+                            (activity) => activity.name,
+                            (activity) => html`
+                                <div>
+                                    ${activity.name}
+                                </div>
+                                ${this.getDueTemplate(activity)}
+                                ${this.getActionButton(activity)}
+                                ${this.getRemoveButton(activity)}`
+                        )}
+                    </div>
+                    <div class="grid-container">
 
+                    </div>
+                    ${this.getAddForm()}
                 </div>
-                ${this.getAddForm()}
-            </div>
-        </ha-card>
+            </ha-card>
+        </div>
         `;
     }
 
     switch_mode(ev) {
+        const card = this.shadowRoot.querySelector('#card');
+        const inner_card = this.shadowRoot.querySelector('#inner-card');
         if ("mode" in this._config) {
             const { "mode": _, ...rest } = this._config;
             this._config = rest;
+
+            card.classList.remove('flip-card-back');
+            inner_card.classList.remove('flip-card-back');
+            void card.offsetWidth; // trigger reflow
+            card.classList.add('flip-card-front');
+            inner_card.classList.add('flip-card-fron');
         }
-        else
-            this._config = {...this._config, mode: "manage"}
+        else {
+            this._config = { ...this._config, mode: "manage" }
+
+            card.classList.remove('flip-card-front');
+            inner_card.classList.remove('flip-card-front');
+            void card.offsetWidth; // trigger reflow
+            card.classList.add('flip-card-back');
+            inner_card.classList.add('flip-card-back');
+        }
     }
 
     fetchData = async () => {
@@ -275,6 +292,19 @@ class ActivityManagerCard extends LitElement{
         top: 22px;
         right: 20px;
     }
+
+    .flip-card-back {
+        transform: rotateY(180deg);
+    }
+
+    ha-card > div {
+        color: blue;
+    }
+
+    .flip-card-front {
+        transform: rotateY(0deg);
+    }
+
     `;
 
     formatTimeAgo(date) {
