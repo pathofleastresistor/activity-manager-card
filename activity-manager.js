@@ -118,6 +118,7 @@ class ActivityManagerCard extends LitElement{
     render() {
         return html`
         <ha-card header=${this.header}>
+            <ha-icon @click=${this.switch_mode} id="settings" icon="mdi:cog"></ha-icon>
             <div class="card-content">
                 <div class="grid-container">
                     ${repeat(
@@ -139,6 +140,15 @@ class ActivityManagerCard extends LitElement{
             </div>
         </ha-card>
         `;
+    }
+
+    switch_mode(ev) {
+        if ("mode" in this._config) {
+            const { "mode": _, ...rest } = this._config;
+            this._config = rest;
+        }
+        else
+            this._config = {...this._config, mode: "manage"}
     }
 
     fetchData = async () => {
@@ -259,6 +269,12 @@ class ActivityManagerCard extends LitElement{
     }
     .unsafe {
         color: var(--error-color);
+    }
+
+    #settings {
+        position: absolute;
+        top: 22px;
+        right: 20px;
     }
     `;
 
