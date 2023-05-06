@@ -297,10 +297,6 @@ class ActivityManagerCard extends LitElement{
         transform: rotateY(180deg);
     }
 
-    ha-card > div {
-        color: blue;
-    }
-
     .flip-card-front {
         transform: rotateY(0deg);
     }
