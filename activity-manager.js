@@ -264,7 +264,6 @@ class ActivityManagerCard extends LitElement{
         background-color: var(--primary-color);
     }
     .safe {
-        color: var(--text-primary-color);
     }
     .unsafe {
         color: var(--error-color);
