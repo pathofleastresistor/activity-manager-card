@@ -59,7 +59,7 @@ class ActivityManagerCard extends LitElement{
 
     getDueTemplate(item) {
         return html`
-        <div class="${(item.difference < 0) ? "unsafe" : "safe"}"">
+        <div class="am-due-date ${(item.difference < 0) ? "am-due" : ""}">
             ${this.formatTimeAgo(item.due)}
         </div>
         `;
@@ -68,7 +68,7 @@ class ActivityManagerCard extends LitElement{
     getActionButton(item) {
         if (!("mode" in this._config) || this._config.mode != "manage")
             return html`
-            <div class="right">
+            <div class="right am-action">
                 <mwc-button class="button" @click=${this.update_activity} data-am-id=${item.id}>
                 Did it!
                 </mwc-button>
@@ -96,7 +96,7 @@ class ActivityManagerCard extends LitElement{
             return html`
             <hr />
             <form>
-                <div class="form-grid-2" >
+                <div class="am-add-form" >
                     <input
                         type="hidden"
                         id="category-input"
@@ -109,7 +109,7 @@ class ActivityManagerCard extends LitElement{
                     <ha-textfield type="number" id="frequency-input" placeholder="Frequency">
                     </ha-textfield>
                 </div>
-                <div class="form-grid-1">
+                <div class="am-add-button">
                     <mwc-button @click=${this.add_activity}>Add</mwc-button>
                 </div>
             </form>
@@ -121,21 +121,18 @@ class ActivityManagerCard extends LitElement{
         <ha-card header=${this.header}>
             <ha-icon @click=${this.switch_mode} id="settings" icon="mdi:cog"></ha-icon>
             <div class="card-content">
-                <div class="grid-container">
+                <div class="am-grid">
                     ${repeat(
                         this._activities,
                         (activity) => activity.name,
                         (activity) => html`
-                            <div>
+                            <div class="am-item-name">
                                 ${activity.name}
                             </div>
                             ${this.getDueTemplate(activity)}
                             ${this.getActionButton(activity)}
                             ${this.getRemoveButton(activity)}`
                     )}
-                </div>
-                <div class="grid-container">
-
                 </div>
                 ${this.getAddForm()}
             </div>
@@ -235,43 +232,35 @@ class ActivityManagerCard extends LitElement{
     }
 
     static styles = css`
-    .grid-container {
+    .am-grid {
         display: grid;
         grid-template-columns: 1fr 1fr 25%;
         align-items: center;
         gap: 10px;
     }
-    .form-grid-3 {
-        padding-top: 10px;
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        align-items: center;
-        gap: 10px;
-    }
-    .form-grid-2 {
+    .am-add-form {
         padding-top: 10px;
         display: grid;
         grid-template-columns: 1fr 1fr;
         align-items: center;
         gap: 10px;
     }
-    .form-grid-1 {
+    .am-add-button {
         padding-top: 10px;
         display: grid;
         grid-template-columns: 1fr;
         align-items: center;
         gap: 10px;
     }
-    .right {
+    .right .am-action{
         text-align: right;
     }
 
     button {
         background-color: var(--primary-color);
     }
-    .safe {
-    }
-    .unsafe {
+
+    .am-due {
         color: var(--error-color);
     }
 
