@@ -25,6 +25,7 @@ A Lovelace card designed as a companion to the [Activity Manager](https://github
 | header | no | Title of the card |
 | category | no | Filter activities to a specific category |
 | mode | no| Set to "manage" if you want the manager interface. Defaults to basic mode.|
+| showDueOnly | no | Set to `true` and only activities that are due is shown
 
 ```
 type: custom:activity-manager-card
@@ -45,6 +46,16 @@ category: Home
   <img width="300" src="images/basic.png">
 </p>
 
+## Customization
+If you want to customize the card style, you can use [Lovlace Card Mod](https://github.com/thomasloven/lovelace-card-mod). Here are some classes:
+
+| Class | Description |
+| - | - |
+| .am-grid | Adjust the grid layout of the activities |
+| .am-item-name | Style activity name |
+| .am-due-date | Style the due date column |
+| .am-due | Style the date if it's due. By default, the text is red. |
+| .am-action | Style the action column |
 
 ## More information
 * Activities are stored in .activities_list.json in your `<config>` folder
