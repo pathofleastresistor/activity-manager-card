@@ -32,7 +32,8 @@ class ActivityManagerCard extends LitElement{
         this._config = config;
         this.header = this._config.category || "Activities";
         this.showDueOnly = config.showDueOnly || false;
-        this._runOnce = false
+        this._runOnce = false;
+        this.fetchData();
     }
 
     set hass(hass) {
@@ -152,9 +153,9 @@ class ActivityManagerCard extends LitElement{
     }
 
     fetchData = async () => {
-        const items =  await this._hass.callWS({
+        const items =  await this._hass?.callWS({
             type: "activity_manager/items",
-        });
+        }) || [];
 
         this._activities = items
             .map(item => {
@@ -180,7 +181,6 @@ class ActivityManagerCard extends LitElement{
                     return a["name"].toLowerCase().localeCompare(b["name"].toLowerCase());
                 return a["category"].toLowerCase().localeCompare(b["category"].toLowerCase());
             });
-        console.log(this._activities);
     };
 
     _add_activity = async (name, category, frequency) => {
@@ -309,22 +309,22 @@ class ActivityManagerCard extends LitElement{
 }
 
 class ActivityManagerCardEditor extends LitElement {
-    setConfig(config) {
-        this._config = config;
-    }
+    // setConfig(config) {
+    //     this._config = config;
+    // }
 
-    get _category() {
-        return this._config?.category || '';
-    }
+    // get _category() {
+    //     return this._config?.category || '';
+    // }
 
-    configChanged(newConfig) {
-        const event = new Event("config-changed", {
-            bubbles: true,
-            composed: true,
-        });
-        event.detail = { config: newConfig };
-        this.dispatchEvent(event);
-    }
+    // configChanged(newConfig) {
+    //     const event = new Event("config-changed", {
+    //         bubbles: true,
+    //         composed: true,
+    //     });
+    //     event.detail = { config: newConfig };
+    //     this.dispatchEvent(event);
+    // }
 }
 
 customElements.define("activity-manager-card", ActivityManagerCard);
