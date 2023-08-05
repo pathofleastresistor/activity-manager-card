@@ -31,6 +31,7 @@ class ActivityManagerCard extends LitElement{
         }
         this._config = config;
         this.header = this._config.category || "Activities";
+        this.showDueOnly = config.showDueOnly || false;
         this._runOnce = false
     }
 
@@ -167,6 +168,11 @@ class ActivityManagerCard extends LitElement{
             .filter(item => {
                 if("category" in this._config)
                     return item["category"] == this._config["category"]
+                return true;
+            })
+            .filter(item => {
+                if (this.showDueOnly)
+                    return item["difference"] < 0;
                 return true;
             })
             .sort((a, b) => {
