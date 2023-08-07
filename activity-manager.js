@@ -26,11 +26,8 @@ class ActivityManagerCard extends LitElement{
     }
 
     setConfig(config) {
-        if (!config.category) {
-          throw new Error("category must be specified");
-        }
         this._config = config;
-        this.header = this._config.category || "Activities";
+        this.header = this._config.header || this._config.category || "Activities";
         this.showDueOnly = config.showDueOnly || false;
         this._runOnce = false;
         this.fetchData();
@@ -165,7 +162,7 @@ class ActivityManagerCard extends LitElement{
             })
             .filter(item => {
                 if("category" in this._config)
-                    return item["category"] == this._config["category"]
+                    return (item["category"] == this._config["category"] || item["category"] == "Activities")
                 return true;
             })
             .filter(item => {
