@@ -319,6 +319,7 @@ class ActivityManagerCard extends LitElement{
         #color: var(--am-item-primary-color, #ffffff);
         #background-color: var(--am-item-background-color, #000000ff);
         border-radius: 8px;
+        align-items: center;
     }
     .am-item-primary {
         font-size: var(--am-item-primary-font-size, 14px);
