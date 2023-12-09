@@ -31,7 +31,7 @@ class ActivityManagerCard extends LitElement{
         this._config.showDueOnly = config.showDueOnly || false;
         this._config.actionTitle = config.actionTitle || "Did it!";
         this._config.mode = config.mode || "basic";
-        this._config.soonHours = config.mode || 24;
+        this._config.soonHours = config.soonHours || 24;
         this._config.icon = config.icon || "mdi:format-list-checkbox";
 
         this._runOnce = false;
@@ -179,7 +179,9 @@ class ActivityManagerCard extends LitElement{
                 const due = new Date(new Date(item.last_completed).setDate(new Date(item.last_completed).getDate() + item.frequency));
                 const now = new Date();
                 const difference = (due - now) // miliseconds
+                
                 console.log(difference);
+                console.log(this._config.soonHours);
 
                 return { ...item, due: due, difference: difference, time_unit: "day" }
             })
