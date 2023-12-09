@@ -179,9 +179,6 @@ class ActivityManagerCard extends LitElement{
                 const due = new Date(new Date(item.last_completed).setDate(new Date(item.last_completed).getDate() + item.frequency));
                 const now = new Date();
                 const difference = (due - now) // miliseconds
-                
-                console.log(difference);
-                console.log(this._config.soonHours);
 
                 return { ...item, due: due, difference: difference, time_unit: "day" }
             })
