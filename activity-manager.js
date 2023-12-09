@@ -370,22 +370,87 @@ class ActivityManagerCard extends LitElement{
 }
 
 class ActivityManagerCardEditor extends LitElement {
-    // setConfig(config) {
-    //     this._config = config;
-    // }
 
-    // get _category() {
-    //     return this._config?.category || '';
-    // }
+    static get properties() {
+      return {
+        hass: {},
+        _config: {},
+      };
+    }
 
-    // configChanged(newConfig) {
-    //     const event = new Event("config-changed", {
-    //         bubbles: true,
-    //         composed: true,
-    //     });
-    //     event.detail = { config: newConfig };
-    //     this.dispatchEvent(event);
-    // }
+    setConfig(config) {
+      this._config = config;
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+    }
+  
+    _valueChanged(ev) {
+    //   console.log("ValueChanged");
+    //   console.log(ev);
+      if (!this._config || !this._hass) {
+        return;
+      }
+      const _config = Object.assign({}, this._config);
+      _config.category = ev.detail.value.category;
+      _config.soonHours = ev.detail.value.soonHours;
+      _config.showDueOnly = ev.detail.value.showDueOnly;
+      _config.actionTitle = ev.detail.value.actionTitle;
+      _config.icon = ev.detail.value.icon;
+      _config.mode = ev.detail.value.mode;
+      
+      this._config = _config;
+  
+      const event = new CustomEvent("config-changed", {
+        detail: { config: _config },
+        bubbles: true,
+        composed: true,
+      });
+      this.dispatchEvent(event);
+    }
+  
+    render() {
+      // console.log("Render");
+      // console.log(this._config);
+      if (!this._hass || !this._config) {
+        return html``;
+      }
+      return html`
+      <ha-form
+        .hass=${this._hass}
+        .data=${this._config}
+        .schema=${[
+            {name: "category", selector: { text: {type:'text'} }},
+            {name: "icon", selector: {icon: {}}},
+            {name: "actionTitle", selector: {text: {}}},
+            {name: "mode", selector: { select: {
+                mode: "dropdown", 
+                options:[
+                    {label: "Basic", value: "basic"},
+                    {label: "Manager", value: "manage"},
+                ]
+            }}},
+            {name: "showDueOnly", selector: {boolean: {}}},
+            {name: "soonHours", selector: {number: { unit_of_measurement: "hours" }}},
+            ]}
+        .computeLabel=${this._computeLabel}
+        @value-changed=${this._valueChanged} 
+        ></ha-form>
+        `;
+    }
+
+    _computeLabel(schema) {
+        var labelMap = {
+            category: "Category",
+            icon: "Icon",
+            actionTitle: "Action button label",
+            showDueOnly: "Only show activities that are due",
+            soonHours: "Soon to be due (styles the activity)",
+            mode: "Manage mode"          
+        }
+        return labelMap[schema.name];
+    }
 }
 
 customElements.define("activity-manager-card", ActivityManagerCard);
