@@ -261,7 +261,7 @@ class ActivityManagerCard extends LitElement{
         --am-item-due-soon-background-color: #00000020;
         --am-item-primary-font-size: 14px;
         --am-item-secondary-font-size: 12px;
-        --mdc-theme-primary: var(--am-item-due-soon-primary-color);
+        --mdc-theme-primary: var(--primary-text-color);
     }
     .content {
         padding: 0 12px 12px 12px;
@@ -316,8 +316,8 @@ class ActivityManagerCard extends LitElement{
         display: grid;
         grid-template-columns: auto min-content;
         padding: 12px;
-        color: var(--am-item-primary-color, #ffffff);
-        background-color: var(--am-item-background-color, #000000ff);
+        #color: var(--am-item-primary-color, #ffffff);
+        #background-color: var(--am-item-background-color, #000000ff);
         border-radius: 8px;
     }
     .am-item-primary {
