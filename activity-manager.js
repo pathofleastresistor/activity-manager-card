@@ -59,13 +59,6 @@ class ActivityManagerCard extends LitElement{
         }
     }
 
-    getDueTemplate(item) {
-        return html`
-        <div class="am-due-date ${(item.difference < 0) ? "am-due" : ""}">
-            ${this.formatTimeAgo(item.due)}
-        </div>
-        `;
-    }
 
     getActionButton(item) {
         if (this._config.mode == "basic")
@@ -186,7 +179,7 @@ class ActivityManagerCard extends LitElement{
                 if("category" in this._config)
                     return (item["category"] == this._config["category"] || item["category"] == "Activities")
                 return true;
-            })
+            })        
             .filter(item => {
                 if (this._config.showDueOnly)
                     return item["difference"] < 0;
@@ -387,8 +380,6 @@ class ActivityManagerCardEditor extends LitElement {
     }
   
     _valueChanged(ev) {
-    //   console.log("ValueChanged");
-    //   console.log(ev);
       if (!this._config || !this._hass) {
         return;
       }
@@ -411,8 +402,6 @@ class ActivityManagerCardEditor extends LitElement {
     }
   
     render() {
-      // console.log("Render");
-      // console.log(this._config);
       if (!this._hass || !this._config) {
         return html``;
       }
