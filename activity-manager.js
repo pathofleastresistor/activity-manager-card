@@ -26,9 +26,14 @@ class ActivityManagerCard extends LitElement{
     }
 
     setConfig(config) {
-        this._config = config;
-        this.header = this._config.header || this._config.category || "Activities";
-        this.showDueOnly = config.showDueOnly || false;
+        this._config = structuredClone(config);
+        this._config.header = this._config.header || this._config.category || "Activities";
+        this._config.showDueOnly = config.showDueOnly || false;
+        this._config.actionTitle = config.actionTitle || "Did it!";
+        this._config.mode = config.mode || "basic";
+        this._config.soonHours = config.mode || 24;
+        this._config.icon = config.icon || "mdi:format-list-checkbox";
+
         this._runOnce = false;
         this.fetchData();
     }
@@ -63,19 +68,15 @@ class ActivityManagerCard extends LitElement{
     }
 
     getActionButton(item) {
-        if (!("mode" in this._config) || this._config.mode != "manage")
+        if (this._config.mode == "basic")
             return html`
             <div class="right am-action">
                 <mwc-button class="button" @click=${this.update_activity} data-am-id=${item.id}>
-                Did it!
+                ${this._config["actionTitle"]}
                 </mwc-button>
             </div>
             `;
 
-        return html``;
-    }
-
-    getRemoveButton(item) {
         if (this._config["mode"] == "manage")
             return html`
             <div class="right">
@@ -115,20 +116,38 @@ class ActivityManagerCard extends LitElement{
 
     render() {
         return html`
-        <ha-card header=${this.header}>
-            <ha-icon @click=${this.switch_mode} id="settings" icon="mdi:cog"></ha-icon>
-            <div class="card-content">
+        <ha-card>
+            <div class="header">
+                <div class="icon-container">
+                <ha-icon icon="${this._config.icon}"></ha-icon>
+                </div>
+                <div class="info-container">
+                    <div class="primary">${this._config.header}</div>
+                </div>
+                <div class="action-container">
+                    <ha-icon @click=${this.switch_mode} id="settings" icon="mdi:dots-vertical"></ha-icon>
+                </div>
+            </div>
+            <div class="content">
                 <div class="am-grid">
                     ${repeat(
                         this._activities,
                         (activity) => activity.name,
                         (activity) => html`
-                            <div class="am-item-name">
-                                ${activity.name}
-                            </div>
-                            ${this.getDueTemplate(activity)}
-                            ${this.getActionButton(activity)}
-                            ${this.getRemoveButton(activity)}`
+                            <div class="am-item
+                                        ${(activity.difference < 0) ? "am-due" : ""}
+                                        ${(activity.difference > 0 && activity.difference < (this._config.soonHours*60*60*1000)) ? "am-due-soon" : ""}"
+                            >
+                                <div class="am-item-name">
+                                    <div class="am-item-primary">
+                                        ${activity.name}
+                                    </div>
+                                    <div class="am-item-secondary">
+                                        ${this.formatTimeAgo(activity.due)}
+                                    </div>
+                                </div>
+                                ${this.getActionButton(activity)}
+                            </div>`
                     )}
                 </div>
                 ${this.getAddForm()}
@@ -138,12 +157,15 @@ class ActivityManagerCard extends LitElement{
     }
 
     switch_mode(ev) {
-        if ("mode" in this._config) {
-            const { "mode": _, ...rest } = this._config;
-            this._config = rest;
+        switch (this._config.mode) {
+            case "basic":
+                this._config.mode = "manage";
+                break;
+            case "manage":
+                this._config.mode = "basic";
+                break;
         }
-        else
-            this._config = {...this._config, mode: "manage"}
+        this.requestUpdate();
     }
 
     fetchData = async () => {
@@ -156,7 +178,8 @@ class ActivityManagerCard extends LitElement{
                 const completed = new Date(item.last_completed);
                 const due = new Date(new Date(item.last_completed).setDate(new Date(item.last_completed).getDate() + item.frequency));
                 const now = new Date();
-                const difference = (due - now) / (1000 * 60 * 60 * 24)
+                const difference = (due - now) // miliseconds
+                console.log(difference);
 
                 return { ...item, due: due, difference: difference, time_unit: "day" }
             })
@@ -166,7 +189,7 @@ class ActivityManagerCard extends LitElement{
                 return true;
             })
             .filter(item => {
-                if (this.showDueOnly)
+                if (this._config.showDueOnly)
                     return item["difference"] < 0;
                 return true;
             })
@@ -229,42 +252,94 @@ class ActivityManagerCard extends LitElement{
     }
 
     static styles = css`
-    .am-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr 25%;
-        align-items: center;
-        gap: 10px;
+    :host {
+        --am-item-primary-color: #ffffff;
+        --am-item-background-color: #00000000;
+        --am-item-due-primary-color: #ff4a4a;
+        --am-item-due-background-color: #ff4a4a14;
+        --am-item-due-soon-primary-color: #ffffff;
+        --am-item-due-soon-background-color: #00000020;
+        --am-item-primary-font-size: 14px;
+        --am-item-secondary-font-size: 12px;
+        --mdc-theme-primary: var(--am-item-due-soon-primary-color);
+    }
+    .content {
+        padding: 0 12px 12px 12px;
     }
     .am-add-form {
         padding-top: 10px;
         display: grid;
-        grid-template-columns: 1fr 1fr;
         align-items: center;
         gap: 10px;
     }
     .am-add-button {
         padding-top: 10px;
-        display: grid;
-        grid-template-columns: 1fr;
-        align-items: center;
-        gap: 10px;
     }
-    .right .am-action{
+
+    .header{
+        display: grid;
+        height: 40px;
+        padding: 12px;
+        grid-template-columns: min-content auto 40px;
+        gap: 4px;
+    }
+    .icon-container{
+        display: flex;
+        height: 40px;
+        width: 40px;
+        border-radius: 50%;
+        background: rgba(111, 111, 111, 0.2);
+        place-content: center;
+        align-items: center;
+        margin-right: 12px;
+
+    }
+    .info-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    .primary {
+        font-weight: bold;
+    }
+    .action-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+    .am-grid {
+        display: grid;
+        gap: 6px;
+    }
+    .am-item {
+        display: grid;
+        grid-template-columns: auto min-content;
+        padding: 12px;
+        color: var(--am-item-primary-color, #ffffff);
+        background-color: var(--am-item-background-color, #000000ff);
+        border-radius: 8px;
+    }
+    .am-item-primary {
+        font-size: var(--am-item-primary-font-size, 14px);
+        font-weight: bold;
+    }
+    .am-item-secondary {
+        font-size: var(--am-item-secondary-font-size, 12px);
+    }
+    .am-action {
         text-align: right;
     }
 
-    button {
-        background-color: var(--primary-color);
+    .am-due-soon {
+        color: var(--am-item-due-soon-primary-color, #ffffff);
+        background-color: var(--am-item-due-soon-background-color, #00000014);
+        --mdc-theme-primary: var(--am-item-due-soon-primary-color);
     }
-
     .am-due {
-        color: var(--error-color);
-    }
-
-    #settings {
-        position: absolute;
-        top: 22px;
-        right: 20px;
+        color: var(--am-item-due-primary-color, #ffffff);
+        background-color: var(--am-item-due-background-color, #00000014);
+        --mdc-theme-primary: var(--am-item-due-primary-color);
     }
     `;
 
