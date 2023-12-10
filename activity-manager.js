@@ -97,8 +97,12 @@ class ActivityManagerCard extends LitElement{
 
                     <ha-textfield type="text" id="activity-input" placeholder="Activity">
                     </ha-textfield>
-                    <ha-textfield type="number" id="frequency-input" placeholder="Frequency">
-                    </ha-textfield>
+                    <div class="duration-input">
+                        <ha-textfield type="number" label="HH" id="frequency-hour">
+                        </ha-textfield>:<ha-textfield type="number" label="MM" id="frequency-minute">
+                        </ha-textfield>:<ha-textfield type="number" label="SS"id="frequency-second">
+                        </ha-textfield>
+                    </div>
                 </div>
                 <div class="am-add-button">
                     <mwc-button @click=${this.add_activity}>Add</mwc-button>
@@ -107,7 +111,7 @@ class ActivityManagerCard extends LitElement{
             `
     }
 
-    render() {
+    render() { 
         return html`
         <ha-card>
             <div class="header">
@@ -169,7 +173,8 @@ class ActivityManagerCard extends LitElement{
         this._activities = items
             .map(item => {
                 const completed = new Date(item.last_completed);
-                const due = new Date(new Date(item.last_completed).setDate(new Date(item.last_completed).getDate() + item.frequency));
+                const due = new Date(completed.valueOf() + item.frequency_ms);
+                //const due = new Date(new Date(item.last_completed).setDate(new Date(item.last_completed).getDate() + item.frequency_ms));
                 const now = new Date();
                 const difference = (due - now) // miliseconds
 
@@ -192,12 +197,12 @@ class ActivityManagerCard extends LitElement{
             });
     };
 
-    _add_activity = async (name, category, frequency) => {
+    _add_activity = async (name, category, frequency_ms) => {
         const result = await this._hass.callWS({
             type: "activity_manager/add",
             name: name,
             category: category,
-            frequency: parseInt(frequency)
+            frequency_ms: parseInt(frequency_ms)
         });
 
         return result;
@@ -207,9 +212,18 @@ class ActivityManagerCard extends LitElement{
         ev.stopPropagation();
         const activity_name = this.shadowRoot.querySelector("#activity-input").value
         const category_name = this.shadowRoot.querySelector("#category-input").value
-        const frequency = this.shadowRoot.querySelector("#frequency-input").value
+        //const frequency = this.shadowRoot.querySelector("#frequency-input").value
+        const frequency_hh = this._getNumber(this.shadowRoot.querySelector("#frequency-hour").value, 0) * 60 * 60 * 1000
+        const frequency_mm = this._getNumber(this.shadowRoot.querySelector("#frequency-minute").value, 0) * 60 * 1000
+        const frequency_ss = this._getNumber(this.shadowRoot.querySelector("#frequency-second").value, 0) * 1000
+        console.log(frequency_hh, frequency_mm, frequency_ss);
 
-        this._add_activity(activity_name, category_name, frequency).then(() => this.fetchData());
+        this._add_activity(activity_name, category_name, frequency_hh+frequency_mm+frequency_ss).then(() => this.fetchData());
+        
+    }
+    _getNumber(value, defaultValue) {
+        const num = parseInt(value, 10);
+        return isNaN(num) ? defaultValue : num;
     }
 
     _update_activity = async (id) => {
@@ -266,6 +280,12 @@ class ActivityManagerCard extends LitElement{
     }
     .am-add-button {
         padding-top: 10px;
+    }
+    .duration-input {
+        display: flex;
+        flex-direction: row;
+        gap: 4px;
+        align-items: center;
     }
 
     .header{
