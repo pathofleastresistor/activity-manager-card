@@ -95,15 +95,18 @@ class ActivityManagerCard extends LitElement{
                         value="${this._config["category"]}">
                     </input>
 
-                    <ha-textfield type="text" id="activity-input" placeholder="Activity">
+                    <ha-textfield type="text" id="activity-input" label="Activity Name">
                     </ha-textfield>
+                    <div>Frequency</div>
                     <div class="duration-input">
-                        <ha-textfield type="number" label="HH" id="frequency-hour">
-                        </ha-textfield>:<ha-textfield type="number" label="MM" id="frequency-minute">
-                        </ha-textfield>:<ha-textfield type="number" label="SS"id="frequency-second">
+                        <ha-textfield type="number" label="Day" id="frequency-day">
+                        </ha-textfield>:<ha-textfield type="number" label="Hour" id="frequency-hour">
+                        </ha-textfield>:<ha-textfield type="number" label="Min" id="frequency-minute">
+                        </ha-textfield>:<ha-textfield type="number" label="Sec"id="frequency-second">
                         </ha-textfield>
                     </div>
                 </div>
+                </ha-form>
                 <div class="am-add-button">
                     <mwc-button @click=${this.add_activity}>Add</mwc-button>
                 </div>
@@ -197,12 +200,12 @@ class ActivityManagerCard extends LitElement{
             });
     };
 
-    _add_activity = async (name, category, frequency_ms) => {
+    _add_activity = async (name, category, frequency) => {
         const result = await this._hass.callWS({
             type: "activity_manager/add",
             name: name,
             category: category,
-            frequency_ms: parseInt(frequency_ms)
+            frequency: frequency,
         });
 
         return result;
@@ -212,15 +215,16 @@ class ActivityManagerCard extends LitElement{
         ev.stopPropagation();
         const activity_name = this.shadowRoot.querySelector("#activity-input").value
         const category_name = this.shadowRoot.querySelector("#category-input").value
-        //const frequency = this.shadowRoot.querySelector("#frequency-input").value
-        const frequency_hh = this._getNumber(this.shadowRoot.querySelector("#frequency-hour").value, 0) * 60 * 60 * 1000
-        const frequency_mm = this._getNumber(this.shadowRoot.querySelector("#frequency-minute").value, 0) * 60 * 1000
-        const frequency_ss = this._getNumber(this.shadowRoot.querySelector("#frequency-second").value, 0) * 1000
-        console.log(frequency_hh, frequency_mm, frequency_ss);
+        const frequency = {}
+        frequency.days = this._getNumber(this.shadowRoot.querySelector("#frequency-day").value, 0)
+        frequency.hours = this._getNumber(this.shadowRoot.querySelector("#frequency-hour").value, 0)
+        frequency.minutes = this._getNumber(this.shadowRoot.querySelector("#frequency-minute").value, 0)
+        frequency.seconds = this._getNumber(this.shadowRoot.querySelector("#frequency-second").value, 0)
 
-        this._add_activity(activity_name, category_name, frequency_hh+frequency_mm+frequency_ss).then(() => this.fetchData());
+        this._add_activity(activity_name, category_name, frequency).then(() => this.fetchData());
         
     }
+
     _getNumber(value, defaultValue) {
         const num = parseInt(value, 10);
         return isNaN(num) ? defaultValue : num;
@@ -236,10 +240,13 @@ class ActivityManagerCard extends LitElement{
     }
 
     update_activity(ev) {
-        ev.stopPropagation();
-        const item_id = ev.target.dataset.amId;
-        this._update_activity(
-            item_id).then(() => this.fetchData());
+        var result =  confirm("Did you complete this?");
+        if(result) {
+            ev.stopPropagation();
+            const item_id = ev.target.dataset.amId;
+            this._update_activity(
+                item_id).then(() => this.fetchData());
+        }
     }
 
     _remove_activity = async (item_id) => {
