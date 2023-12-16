@@ -59,13 +59,6 @@ class ActivityManagerCard extends LitElement{
         }
     }
 
-    getDueTemplate(item) {
-        return html`
-        <div class="am-due-date ${(item.difference < 0) ? "am-due" : ""}">
-            ${this.formatTimeAgo(item.due)}
-        </div>
-        `;
-    }
 
     getActionButton(item) {
         if (this._config.mode == "basic")
@@ -102,11 +95,18 @@ class ActivityManagerCard extends LitElement{
                         value="${this._config["category"]}">
                     </input>
 
-                    <ha-textfield type="text" id="activity-input" placeholder="Activity">
+                    <ha-textfield type="text" id="activity-input" label="Activity Name">
                     </ha-textfield>
-                    <ha-textfield type="number" id="frequency-input" placeholder="Frequency">
-                    </ha-textfield>
+                    <div>Frequency</div>
+                    <div class="duration-input">
+                        <ha-textfield type="number" label="Day" id="frequency-day">
+                        </ha-textfield>:<ha-textfield type="number" label="Hour" id="frequency-hour">
+                        </ha-textfield>:<ha-textfield type="number" label="Min" id="frequency-minute">
+                        </ha-textfield>:<ha-textfield type="number" label="Sec"id="frequency-second">
+                        </ha-textfield>
+                    </div>
                 </div>
+                </ha-form>
                 <div class="am-add-button">
                     <mwc-button @click=${this.add_activity}>Add</mwc-button>
                 </div>
@@ -114,7 +114,7 @@ class ActivityManagerCard extends LitElement{
             `
     }
 
-    render() {
+    render() { 
         return html`
         <ha-card>
             <div class="header">
@@ -176,7 +176,8 @@ class ActivityManagerCard extends LitElement{
         this._activities = items
             .map(item => {
                 const completed = new Date(item.last_completed);
-                const due = new Date(new Date(item.last_completed).setDate(new Date(item.last_completed).getDate() + item.frequency));
+                const due = new Date(completed.valueOf() + item.frequency_ms);
+                //const due = new Date(new Date(item.last_completed).setDate(new Date(item.last_completed).getDate() + item.frequency_ms));
                 const now = new Date();
                 const difference = (due - now) // miliseconds
 
@@ -186,7 +187,7 @@ class ActivityManagerCard extends LitElement{
                 if("category" in this._config)
                     return (item["category"] == this._config["category"] || item["category"] == "Activities")
                 return true;
-            })
+            })        
             .filter(item => {
                 if (this._config.showDueOnly)
                     return item["difference"] < 0;
@@ -204,7 +205,7 @@ class ActivityManagerCard extends LitElement{
             type: "activity_manager/add",
             name: name,
             category: category,
-            frequency: parseInt(frequency)
+            frequency: frequency,
         });
 
         return result;
@@ -214,9 +215,19 @@ class ActivityManagerCard extends LitElement{
         ev.stopPropagation();
         const activity_name = this.shadowRoot.querySelector("#activity-input").value
         const category_name = this.shadowRoot.querySelector("#category-input").value
-        const frequency = this.shadowRoot.querySelector("#frequency-input").value
+        const frequency = {}
+        frequency.days = this._getNumber(this.shadowRoot.querySelector("#frequency-day").value, 0)
+        frequency.hours = this._getNumber(this.shadowRoot.querySelector("#frequency-hour").value, 0)
+        frequency.minutes = this._getNumber(this.shadowRoot.querySelector("#frequency-minute").value, 0)
+        frequency.seconds = this._getNumber(this.shadowRoot.querySelector("#frequency-second").value, 0)
 
         this._add_activity(activity_name, category_name, frequency).then(() => this.fetchData());
+        
+    }
+
+    _getNumber(value, defaultValue) {
+        const num = parseInt(value, 10);
+        return isNaN(num) ? defaultValue : num;
     }
 
     _update_activity = async (id) => {
@@ -229,10 +240,13 @@ class ActivityManagerCard extends LitElement{
     }
 
     update_activity(ev) {
-        ev.stopPropagation();
-        const item_id = ev.target.dataset.amId;
-        this._update_activity(
-            item_id).then(() => this.fetchData());
+        var result =  confirm("Did you complete this?");
+        if(result) {
+            ev.stopPropagation();
+            const item_id = ev.target.dataset.amId;
+            this._update_activity(
+                item_id).then(() => this.fetchData());
+        }
     }
 
     _remove_activity = async (item_id) => {
@@ -273,6 +287,12 @@ class ActivityManagerCard extends LitElement{
     }
     .am-add-button {
         padding-top: 10px;
+    }
+    .duration-input {
+        display: flex;
+        flex-direction: row;
+        gap: 4px;
+        align-items: center;
     }
 
     .header{
@@ -387,8 +407,6 @@ class ActivityManagerCardEditor extends LitElement {
     }
   
     _valueChanged(ev) {
-    //   console.log("ValueChanged");
-    //   console.log(ev);
       if (!this._config || !this._hass) {
         return;
       }
@@ -411,8 +429,6 @@ class ActivityManagerCardEditor extends LitElement {
     }
   
     render() {
-      // console.log("Render");
-      // console.log(this._config);
       if (!this._hass || !this._config) {
         return html``;
       }
