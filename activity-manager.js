@@ -138,11 +138,16 @@ class ActivityManagerCard extends LitElement {
                         <div class="primary">${this._config.header}</div>
                     </div>
                     <div class="action-container">
-                        <ha-icon
-                            @click=${this.switch_mode}
-                            id="settings"
-                            icon="mdi:dots-vertical"
-                        ></ha-icon>
+                        <mwc-icon-button @click=${this.switch_mode}>
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    d="M12,16A2,2 0 0,1 14,18A2,2 0 0,1 12,20A2,2 0 0,1 10,18A2,2 0 0,1 12,16M12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12A2,2 0 0,1 12,10M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4Z"
+                                />
+                            </svg>
+                        </mwc-icon-button>
                     </div>
                 </div>
                 <div class="content">
@@ -343,12 +348,12 @@ class ActivityManagerCard extends LitElement {
             gap: 4px;
             align-items: center;
         }
-
         .header {
             display: grid;
+            grid-template-columns: min-content auto 40px;
+            align-items: center;
             height: 40px;
             padding: 12px;
-            grid-template-columns: min-content auto 40px;
             gap: 4px;
         }
         .icon-container {
@@ -398,7 +403,6 @@ class ActivityManagerCard extends LitElement {
         .am-action {
             text-align: right;
         }
-
         .am-due-soon {
             color: var(--am-item-due-soon-primary-color, #ffffff);
             background-color: var(
