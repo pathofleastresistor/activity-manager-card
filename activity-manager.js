@@ -67,63 +67,58 @@ class ActivityManagerCard extends LitElement {
     }
 
     getActionButton(item) {
-        if (this._config.mode == "basic")
-            return html`
-                <div class="right am-action">
-                    <mwc-button
-                        class="button"
-                        @click=${this.update_activity}
-                        data-am-id=${item.id}
-                    >
-                        ${this._config["actionTitle"]}
-                    </mwc-button>
-                </div>
-            `;
-
-        if (this._config["mode"] == "manage")
-            return html`
-                <div class="right">
-                    <mwc-button
-                        class="button"
-                        @click=${this.remove_activity}
-                        data-am-id=${item.id}
-                    >
-                        Remove
-                    </mwc-button>
-                </div>
-            `;
-
-        return html``;
+        return html`
+            <div class="right am-action">
+                <mwc-button
+                    class="button"
+                    @click=${this._config.mode == "basic"
+                        ? this.update_activity
+                        : this.remove_activity}
+                    data-am-id=${item.id}
+                >
+                    ${this._config.mode == "basic"
+                        ? this._config["actionTitle"]
+                        : "Remove"}
+                </mwc-button>
+            </div>
+        `;
     }
 
-    getAddForm() {
-        if (this._config.mode == "manage")
-            return html`
-            <hr />
-            <form>
-                <div class="am-add-form" >
-                    <input
-                        type="hidden"
-                        id="category-input"
-                        placeholder="Category"
-                        value="${this._config["category"]}" />
+    renderAddDialog() {
+        return html`
+            <ha-dialog class="manage-form" heading="Add Activity">
+                <form>
+                    <div class="am-add-form" >
+                        <input
+                            type="hidden"
+                            id="category"
+                            placeholder="Category"
+                            value="${this._config["category"]}" />
 
-                    <ha-textfield type="text" id="activity-input" label="Activity Name">
-                    </ha-textfield>
-                    <div>Frequency</div>
-                    <div class="duration-input">
-                        <ha-textfield type="number" label="Day" id="frequency-day">
-                        </ha-textfield>:<ha-textfield type="number" label="Hour" id="frequency-hour">
-                        </ha-textfield>:<ha-textfield type="number" label="Min" id="frequency-minute">
-                        </ha-textfield>:<ha-textfield type="number" label="Sec"id="frequency-second">
+                        <ha-textfield type="text" id="name" label="Activity Name">
+                        </ha-textfield>
+                        <label for="frequency-day">Frequency</label>
+                        <div class="duration-input">
+                            <ha-textfield type="number" label="Day" id="frequency-day">
+                            </ha-textfield>:<ha-textfield type="number" label="Hour" id="frequency-hour">
+                            </ha-textfield>:<ha-textfield type="number" label="Min" id="frequency-minute">
+                            </ha-textfield>:<ha-textfield type="number" label="Sec"id="frequency-second">
+                            </ha-textfield>
+                        </div>
+                        <ha-textfield type="text" id="icon" label="Activity Icon">
+                        </ha-textfield>
+                        <ha-textfield type="datetime-local" id="last-completed" label="Activity Last Completed">
                         </ha-textfield>
                     </div>
-                </div>
-                </ha-form>
-                <div class="am-add-button">
-                    <mwc-button @click=${this.add_activity}>Add</mwc-button>
-                </div>
-            </form>
+                    </ha-form>
+                </form>
+                <mwc-button slot="primaryAction" dialogAction="discard" @click=${this.add_activity}>
+                    Add
+                </mwc-button>
+                <mwc-button slot="secondaryAction" dialogAction="cancel">
+                    Cancel
+                </mwc-button>
+            </ha-dialog>
             `;
     }
 
@@ -138,6 +133,22 @@ class ActivityManagerCard extends LitElement {
                         <div class="primary">${this._config.header}</div>
                     </div>
                     <div class="action-container">
+                        <mwc-icon-button
+                            @click=${() => {
+                                this.shadowRoot
+                                    .querySelector(".manage-form")
+                                    .show();
+                            }}
+                        >
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    d="M14.3 21.7C13.6 21.9 12.8 22 12 22C6.5 22 2 17.5 2 12S6.5 2 12 2C13.3 2 14.6 2.3 15.8 2.7L14.2 4.3C13.5 4.1 12.8 4 12 4C7.6 4 4 7.6 4 12S7.6 20 12 20C12.4 20 12.9 20 13.3 19.9C13.5 20.6 13.9 21.2 14.3 21.7M7.9 10.1L6.5 11.5L11 16L21 6L19.6 4.6L11 13.2L7.9 10.1M18 14V17H15V19H18V22H20V19H23V17H20V14H18Z"
+                                />
+                            </svg>
+                        </mwc-icon-button>
                         <mwc-icon-button @click=${this.switch_mode}>
                             <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -155,32 +166,34 @@ class ActivityManagerCard extends LitElement {
                         ${repeat(
                             this._activities,
                             (activity) => activity.name,
-                            (activity) => html` <div
-                                class="am-item
+                            (activity) => html`
+                                <div
+                                    class="am-item
                                         ${activity.difference < 0
-                                    ? "am-due"
-                                    : ""}
+                                        ? "am-due"
+                                        : ""}
                                         ${activity.difference > 0 &&
-                                activity.difference <
-                                    this._config.soonHours * 60 * 60 * 1000
-                                    ? "am-due-soon"
-                                    : ""}"
-                            >
-                                <div class="am-item-name">
-                                    <div class="am-item-primary">
-                                        ${activity.name}
+                                    activity.difference <
+                                        this._config.soonHours * 60 * 60 * 1000
+                                        ? "am-due-soon"
+                                        : ""}"
+                                >
+                                    <div class="am-item-name">
+                                        <div class="am-item-primary">
+                                            ${activity.name}
+                                        </div>
+                                        <div class="am-item-secondary">
+                                            ${this.formatTimeAgo(activity.due)}
+                                        </div>
                                     </div>
-                                    <div class="am-item-secondary">
-                                        ${this.formatTimeAgo(activity.due)}
-                                    </div>
+                                    ${this.getActionButton(activity)}
                                 </div>
-                                ${this.getActionButton(activity)}
-                            </div>`
+                            `
                         )}
                     </div>
-                    ${this.getAddForm()}
                 </div>
             </ha-card>
+            ${this.renderAddDialog()}
         `;
     }
 
@@ -240,24 +253,14 @@ class ActivityManagerCard extends LitElement {
             });
     };
 
-    _add_activity = async (name, category, frequency) => {
-        const result = await this._hass.callWS({
-            type: "activity_manager/add",
-            name: name,
-            category: category,
-            frequency: frequency,
-        });
-
-        return result;
-    };
-
     add_activity(ev) {
         ev.stopPropagation();
-        const activity_name =
-            this.shadowRoot.querySelector("#activity-input").value;
-        const category_name =
-            this.shadowRoot.querySelector("#category-input").value;
-        const frequency = {};
+        let name = this.shadowRoot.querySelector("#name");
+        let category = this.shadowRoot.querySelector("#category");
+        let icon = this.shadowRoot.querySelector("#icon");
+        let last_completed = this.shadowRoot.querySelector("#last-completed");
+
+        let frequency = {};
         frequency.days = this._getNumber(
             this.shadowRoot.querySelector("#frequency-day").value,
             0
@@ -275,9 +278,22 @@ class ActivityManagerCard extends LitElement {
             0
         );
 
-        this._add_activity(activity_name, category_name, frequency).then(() =>
-            this.fetchData()
-        );
+        console.log(last_completed);
+
+        this._hass.callService("activity_manager", "add_activity", {
+            name: name.value,
+            category: category.value,
+            frequency: frequency,
+            icon: icon.value,
+            last_completed: last_completed.value,
+        });
+        name.value = "";
+        category.value = "";
+        icon = "";
+        last_completed = "";
+
+        let manageEl = this.shadowRoot.querySelector(".manage-form");
+        manageEl.close();
     }
 
     _getNumber(value, defaultValue) {
@@ -350,7 +366,7 @@ class ActivityManagerCard extends LitElement {
         }
         .header {
             display: grid;
-            grid-template-columns: min-content auto 40px;
+            grid-template-columns: 52px auto min-content;
             align-items: center;
             height: 40px;
             padding: 12px;
