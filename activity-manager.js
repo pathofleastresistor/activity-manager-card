@@ -8,6 +8,8 @@ import {
 
 class ActivityManagerCard extends LitElement {
     _current_id = null;
+    _currentItem = null;
+    _activities = [];
 
     static getConfigElement() {
         return document.createElement("activity-manager-card-editor");
@@ -19,18 +21,11 @@ class ActivityManagerCard extends LitElement {
         };
     }
 
-    // Define fields that will trigger re-rendering when changed
     static get properties() {
         return {
             _hass: {},
             _config: {},
-            _activities: [],
         };
-    }
-
-    constructor() {
-        super();
-        this._activities = [];
     }
 
     setConfig(config) {
@@ -42,127 +37,26 @@ class ActivityManagerCard extends LitElement {
         this._config.mode = config.mode || "basic";
         this._config.soonHours = config.soonHours || 24;
         this._config.icon = config.icon || "mdi:format-list-checkbox";
+        this._config.vertical = config.vertical || false;
 
         this._runOnce = false;
-        this.fetchData();
+        this._fetchData();
     }
 
     set hass(hass) {
         this._hass = hass;
         if (!this._runOnce) {
             // Update when loading
-            this.fetchData();
-
-            // Update once an hour
-            this._interval = setInterval(() => {
-                this.fetchData(hass);
-            }, 60000);
+            this._fetchData();
 
             // Update when changes are made
             this._hass.connection.subscribeEvents(
-                () => this.fetchData(),
+                () => this._fetchData(),
                 "activity_manager_updated"
             );
 
             this._runOnce = true;
         }
-    }
-
-    renderActionButton(item) {
-        return html`
-            <div class="right am-action">
-                <mwc-button
-                    outlined
-                    class="button"
-                    @click=${this._config.mode == "basic"
-                        ? this.showUpdateDialog
-                        : this.remove_activity}
-                    data-am-id=${item.id}
-                >
-                    ${this._config.mode == "basic"
-                        ? this._config["actionTitle"]
-                        : "Remove"}
-                </mwc-button>
-            </div>
-        `;
-    }
-
-    renderAddDialog() {
-        const date = new Date();
-        const year = date.getFullYear();
-        const month = (date.getMonth() + 1).toString().padStart(2, "0");
-        const day = date.getDate().toString().padStart(2, "0");
-        const hours = date.getHours().toString().padStart(2, "0");
-        const minutes = date.getMinutes().toString().padStart(2, "0");
-        let val = `${year}-${month}-${day}T${hours}:${minutes}`;
-
-        return html`
-            <ha-dialog class="manage-form" heading="Add Activity">
-                <form>
-                    <div class="am-add-form" >
-                        <input
-                            type="hidden"
-                            id="category"
-                            placeholder="Category"
-                            value="${this._config["category"]}" />
-
-                        <ha-textfield type="text" id="name" label="Activity Name">
-                        </ha-textfield>
-                        <label for="frequency-day">Frequency</label>
-                        <div class="duration-input">
-                            <ha-textfield type="number" label="Day" id="frequency-day">
-                            </ha-textfield>:<ha-textfield type="number" label="Hour" id="frequency-hour">
-                            </ha-textfield>:<ha-textfield type="number" label="Min" id="frequency-minute">
-                            </ha-textfield>:<ha-textfield type="number" label="Sec"id="frequency-second">
-                            </ha-textfield>
-                        </div>
-                        <ha-textfield type="text" id="icon" label="Activity Icon">
-                        </ha-textfield>
-                        <ha-textfield type="datetime-local" id="last-completed" label="Activity Last Completed" value=${val}>
-                        </ha-textfield>
-                    </div>
-                    </ha-form>
-                </form>
-                <mwc-button slot="primaryAction" dialogAction="discard" @click=${this.add_activity}>
-                    Add
-                </mwc-button>
-                <mwc-button slot="secondaryAction" dialogAction="cancel">
-                    Cancel
-                </mwc-button>
-            </ha-dialog>
-            `;
-    }
-
-    renderConfirmDialog() {
-        const date = new Date();
-        const year = date.getFullYear();
-        const month = (date.getMonth() + 1).toString().padStart(2, "0");
-        const day = date.getDate().toString().padStart(2, "0");
-        const hours = date.getHours().toString().padStart(2, "0");
-        const minutes = date.getMinutes().toString().padStart(2, "0");
-        let val = `${year}-${month}-${day}T${hours}:${minutes}`;
-
-        return html`
-            <ha-dialog class="confirm-update" heading="Confirm">
-                <ha-textfield
-                    type="datetime-local"
-                    id="update-last-completed"
-                    label="Activity Last Completed"
-                    value=${val}
-                >
-                </ha-textfield>
-                <mwc-button
-                    slot="primaryAction"
-                    dialogAction="discard"
-                    @click=${this.updateActivity}
-                >
-                    Confirm
-                </mwc-button>
-                <mwc-button slot="secondaryAction" dialogAction="cancel">
-                    Cancel
-                </mwc-button>
-            </ha-dialog>
-        `;
     }
 
     render() {
@@ -192,7 +86,7 @@ class ActivityManagerCard extends LitElement {
                                 />
                             </svg>
                         </mwc-icon-button>
-                        <mwc-icon-button @click=${this.switch_mode}>
+                        <mwc-icon-button @click=${this._switchMode}>
                             <svg
                                 xmlns="http://www.w3.org/2000/svg"
                                 viewBox="0 0 24 24"
@@ -205,54 +99,256 @@ class ActivityManagerCard extends LitElement {
                     </div>
                 </div>
                 <div class="content">
-                    <div class="am-grid">
+                    <div
+                        class="am-grid 
+                        ${this._config.vertical ? "am-vertical" : ""}"
+                    >
                         ${repeat(
                             this._activities,
                             (activity) => activity.name,
                             (activity) => html`
                                 <div
-                                    class="am-item
-                                        ${activity.difference < 0
-                                        ? "am-due"
+                                    @click=${() =>
+                                        this._showUpdateDialog(activity)}
+                                    class="am-item 
+                                    ${this._config.vertical
+                                        ? "am-item-vertical"
                                         : ""}
-                                        ${activity.difference > 0 &&
+                                    ${activity.difference < 0 ? "am-due" : ""}
+                                    ${activity.difference > 0 &&
                                     activity.difference <
                                         this._config.soonHours * 60 * 60 * 1000
                                         ? "am-due-soon"
                                         : ""}"
                                 >
-                                    <div class="am-item-name">
+                                    <div
+                                        class="am-icon 
+                                            ${this._config.vertical
+                                            ? "am-icon-vertical"
+                                            : ""}"
+                                    >
+                                        <ha-icon
+                                            icon="${activity.icon
+                                                ? activity.icon
+                                                : "mdi:check-circle-outline"}"
+                                        >
+                                        </ha-icon>
+                                    </div>
+                                    <span class="am-item-name">
                                         <div class="am-item-primary">
                                             ${activity.name}
                                         </div>
                                         <div class="am-item-secondary">
                                             ${this.formatTimeAgo(activity.due)}
                                         </div>
-                                    </div>
-                                    ${this.renderActionButton(activity)}
+                                    </span>
+                                    ${this._renderActionButton(activity)}
+                                    <mwc-ripple></mwc-ripple>
                                 </div>
                             `
                         )}
                     </div>
                 </div>
             </ha-card>
-            ${this.renderAddDialog()} ${this.renderConfirmDialog()}
+            ${this._renderAddDialog()} ${this._renderUpdateDialog()}
+            ${this._renderRemoveDialog()}
         `;
     }
 
-    switch_mode(ev) {
-        switch (this._config.mode) {
-            case "basic":
-                this._config.mode = "manage";
-                break;
-            case "manage":
-                this._config.mode = "basic";
-                break;
-        }
-        this.requestUpdate();
+    _renderActionButton(activity) {
+        return html`
+            <div class="am-action">
+                ${!this._config.vertical
+                    ? html`
+                          <mwc-icon-button
+                              @click=${() => this._showUpdateDialog(activity)}
+                              data-am-id=${activity.id}
+                          >
+                              <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                              >
+                                  <path
+                                      d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"
+                                  />
+                              </svg>
+                          </mwc-icon-button>
+                      `
+                    : ``}
+                ${this._config.mode == "manage"
+                    ? html`
+                          <mwc-icon-button
+                              @click=${() => this._showRemoveDialog(activity)}
+                              data-am-id=${activity.id}
+                          >
+                              <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                              >
+                                  <path
+                                      d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
+                                  />
+                              </svg>
+                          </mwc-icon-button>
+                      `
+                    : ``}
+            </div>
+        `;
     }
 
-    fetchData = async () => {
+    _renderAddDialog() {
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, "0");
+        const day = date.getDate().toString().padStart(2, "0");
+        const hours = date.getHours().toString().padStart(2, "0");
+        const minutes = date.getMinutes().toString().padStart(2, "0");
+        let val = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+        return html`
+            <ha-dialog class="manage-form" heading="Add Activity for ${this._config["category"]}">
+                <form>
+                    <div class="am-add-form" >
+                        <input
+                            type="hidden"
+                            id="category"
+                            placeholder="Category"
+                            value="${this._config["category"]}" />
+
+                        <div class="form-item">
+                            <label for="name">Name</label>
+                            <ha-textfield type="text" id="name">
+                            </ha-textfield>
+                        </div>
+                        
+                        <div class="form-item">
+                            <label for="frequency-day">Frequency</label>
+                            <div class="duration-input">
+                                <ha-textfield type="number" label="dd" id="frequency-day" value="0"></ha-textfield>
+                                <ha-textfield type="number" label="hh" id="frequency-hour" value="0"></ha-textfield>
+                                <ha-textfield type="number" label="mm" id="frequency-minute" value="0"></ha-textfield>
+                                <ha-textfield type="number" label="ss"id="frequency-second" value="0"></ha-textfield>
+                            </div>
+                        </div>
+
+                        <div class="form-item">
+                            <label for="icon">Icon</label>
+                            <ha-textfield type="text" id="icon">
+                            </ha-textfield>
+                        </div>
+
+                        <div class="form-item">
+                            <label for="last-completed">Last Completed</label>
+                            <ha-textfield type="datetime-local" id="last-completed" value=${val}>
+                            </ha-textfield>
+                        </div>
+                    </div>
+                    </ha-form>
+                </form>
+                <mwc-button slot="primaryAction" dialogAction="discard" @click=${this._addActivity}>
+                    Add
+                </mwc-button>
+                <mwc-button slot="secondaryAction" dialogAction="cancel">
+                    Cancel
+                </mwc-button>
+            </ha-dialog>
+        `;
+    }
+
+    _renderUpdateDialog() {
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, "0");
+        const day = date.getDate().toString().padStart(2, "0");
+        const hours = date.getHours().toString().padStart(2, "0");
+        const minutes = date.getMinutes().toString().padStart(2, "0");
+        let val = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+        return html`
+            <ha-dialog class="confirm-update" heading="Confirm">
+                <div class="confirm-grid">
+                    <ha-textfield
+                        type="datetime-local"
+                        id="update-last-completed"
+                        label="Activity Last Completed"
+                        value=${val}
+                    >
+                    </ha-textfield>
+                </div>
+                <mwc-button
+                    slot="primaryAction"
+                    dialogAction="discard"
+                    @click=${this._updateActivity}
+                >
+                    Update
+                </mwc-button>
+                <mwc-button slot="secondaryAction" dialogAction="cancel">
+                    Cancel
+                </mwc-button>
+            </ha-dialog>
+        `;
+    }
+
+    _renderRemoveDialog() {
+        return html`
+            <ha-dialog class="confirm-remove" heading="Confirm">
+                <div>
+                    Remove
+                    ${this._currentItem ? this._currentItem["name"] : ""}?
+                </div>
+                <mwc-button
+                    slot="primaryAction"
+                    dialogAction="discard"
+                    @click=${this._removeActivity}
+                >
+                    Remove
+                </mwc-button>
+                <mwc-button slot="secondaryAction" dialogAction="cancel">
+                    Cancel
+                </mwc-button>
+            </ha-dialog>
+        `;
+    }
+
+    _addActivity() {
+        let name = this.shadowRoot.querySelector("#name");
+        let category = this.shadowRoot.querySelector("#category");
+        let icon = this.shadowRoot.querySelector("#icon");
+        let last_completed = this.shadowRoot.querySelector("#last-completed");
+
+        let frequency = {};
+        frequency.days = this._getNumber(
+            this.shadowRoot.querySelector("#frequency-day").value,
+            0
+        );
+        frequency.hours = this._getNumber(
+            this.shadowRoot.querySelector("#frequency-hour").value,
+            0
+        );
+        frequency.minutes = this._getNumber(
+            this.shadowRoot.querySelector("#frequency-minute").value,
+            0
+        );
+        frequency.seconds = this._getNumber(
+            this.shadowRoot.querySelector("#frequency-second").value,
+            0
+        );
+
+        this._hass.callService("activity_manager", "add_activity", {
+            name: name.value,
+            category: category.value,
+            frequency: frequency,
+            icon: icon.value,
+            last_completed: last_completed.value,
+        });
+        name.value = "";
+        icon.value = "";
+
+        let manageEl = this.shadowRoot.querySelector(".manage-form");
+        manageEl.close();
+    }
+
+    _fetchData = async () => {
         const items =
             (await this._hass?.callWS({
                 type: "activity_manager/items",
@@ -294,63 +390,36 @@ class ActivityManagerCard extends LitElement {
                     .toLowerCase()
                     .localeCompare(b["category"].toLowerCase());
             });
+
+        this.requestUpdate();
     };
 
-    add_activity(ev) {
-        ev.stopPropagation();
-        let name = this.shadowRoot.querySelector("#name");
-        let category = this.shadowRoot.querySelector("#category");
-        let icon = this.shadowRoot.querySelector("#icon");
-        let last_completed = this.shadowRoot.querySelector("#last-completed");
-
-        let frequency = {};
-        frequency.days = this._getNumber(
-            this.shadowRoot.querySelector("#frequency-day").value,
-            0
-        );
-        frequency.hours = this._getNumber(
-            this.shadowRoot.querySelector("#frequency-hour").value,
-            0
-        );
-        frequency.minutes = this._getNumber(
-            this.shadowRoot.querySelector("#frequency-minute").value,
-            0
-        );
-        frequency.seconds = this._getNumber(
-            this.shadowRoot.querySelector("#frequency-second").value,
-            0
-        );
-
-        console.log(last_completed);
-
-        this._hass.callService("activity_manager", "add_activity", {
-            name: name.value,
-            category: category.value,
-            frequency: frequency,
-            icon: icon.value,
-            last_completed: last_completed.value,
-        });
-        name.value = "";
-        category.value = "";
-        icon = "";
-        last_completed = "";
-
-        let manageEl = this.shadowRoot.querySelector(".manage-form");
-        manageEl.close();
+    _showRemoveDialog(item) {
+        this._currentItem = item;
+        this.requestUpdate();
+        this.shadowRoot.querySelector(".confirm-remove").show();
     }
 
-    _getNumber(value, defaultValue) {
-        const num = parseInt(value, 10);
-        return isNaN(num) ? defaultValue : num;
-    }
-
-    showUpdateDialog(ev) {
+    _showUpdateDialog(item) {
+        this._currentItem = item;
+        this.requestUpdate();
         this.shadowRoot.querySelector(".confirm-update").show();
-        this._current_id = ev.target.dataset.amId;
     }
 
-    updateActivity() {
-        if (this._current_id == null) return;
+    _switchMode(ev) {
+        switch (this._config.mode) {
+            case "basic":
+                this._config.mode = "manage";
+                break;
+            case "manage":
+                this._config.mode = "basic";
+                break;
+        }
+        this.requestUpdate();
+    }
+
+    _updateActivity() {
+        if (this._currentItem == null) return;
 
         let last_completed = this.shadowRoot.querySelector(
             "#update-last-completed"
@@ -358,19 +427,17 @@ class ActivityManagerCard extends LitElement {
 
         this._hass.callWS({
             type: "activity_manager/update",
-            item_id: this._current_id,
+            item_id: this._currentItem["id"],
             last_completed: last_completed.value,
         });
-
-        this._current_id = null;
     }
 
-    remove_activity(ev) {
-        ev.stopPropagation();
-        const item_id = ev.target.dataset.amId;
+    _removeActivity() {
+        if (this._currentItem == null) return;
+
         this._hass.callWS({
             type: "activity_manager/remove",
-            item_id: item_id,
+            item_id: this._currentItem["id"],
         });
     }
 
@@ -401,16 +468,13 @@ class ActivityManagerCard extends LitElement {
         .duration-input {
             display: flex;
             flex-direction: row;
-            gap: 4px;
             align-items: center;
         }
         .header {
             display: grid;
             grid-template-columns: 52px auto min-content;
             align-items: center;
-            height: 40px;
             padding: 12px;
-            gap: 4px;
         }
         .icon-container {
             display: flex;
@@ -438,17 +502,46 @@ class ActivityManagerCard extends LitElement {
         }
         .am-grid {
             display: grid;
-            gap: 6px;
+            gap: 12px;
         }
+
+        .am-vertical {
+            grid-template-columns: repeat(2, 1fr);
+            text-align: center;
+        }
+
         .am-item {
-            display: grid;
-            grid-template-columns: auto max-content;
-            padding: 12px;
+            display: flex;
             #color: var(--am-item-primary-color, #ffffff);
             #background-color: var(--am-item-background-color, #000000ff);
             border-radius: 8px;
             align-items: center;
+            padding: 12px;
+            cursor: pointer;
         }
+
+        .am-item-vertical {
+            flex-direction: column;
+        }
+
+        .am-icon {
+            display: block;
+            border-radius: 50%;
+            background-color: #333;
+            padding: 5px;
+            margin-right: 12px;
+            --mdc-icon-size: 24px;
+        }
+
+        .am-icon-vertical {
+            margin-right: 0;
+            margin-bottom: 12px;
+        }
+
+        .am-item-name {
+            flex: 1 1 auto;
+        }
+
         .am-item-primary {
             font-size: var(--am-item-primary-font-size, 14px);
             font-weight: bold;
@@ -457,7 +550,9 @@ class ActivityManagerCard extends LitElement {
             font-size: var(--am-item-secondary-font-size, 12px);
         }
         .am-action {
-            text-align: right;
+            display: grid;
+            grid-template-columns: auto auto;
+            align-items: center;
         }
         .am-due-soon {
             color: var(--am-item-due-soon-primary-color, #ffffff);
@@ -471,6 +566,17 @@ class ActivityManagerCard extends LitElement {
             color: var(--am-item-due-primary-color, #ffffff);
             background-color: var(--am-item-due-background-color, #00000014);
             --mdc-theme-primary: var(--am-item-due-primary-color);
+        }
+
+        .form-item {
+            display: grid;
+            grid-template-columns: 1fr 1.8fr;
+            align-items: center;
+            --mdc-shape-small: 0px;
+        }
+        .confirm-grid {
+            display: grid;
+            gap: 12px;
         }
     `;
 
@@ -498,6 +604,11 @@ class ActivityManagerCard extends LitElement {
             duration /= division.amount;
         }
     }
+
+    _getNumber(value, defaultValue) {
+        const num = parseInt(value, 10);
+        return isNaN(num) ? defaultValue : num;
+    }
 }
 
 class ActivityManagerCardEditor extends LitElement {
@@ -516,7 +627,6 @@ class ActivityManagerCardEditor extends LitElement {
 
     set hass(hass) {
         this._hass = hass;
-        console.log(this._hass);
 
         Object.keys(this._hass["states"]).forEach((key) => {
             let entity = this._hass["states"][key];
@@ -550,6 +660,7 @@ class ActivityManagerCardEditor extends LitElement {
         _config.showDueOnly = ev.detail.value.showDueOnly;
         _config.actionTitle = ev.detail.value.actionTitle;
         _config.icon = ev.detail.value.icon;
+        _config.vertical = ev.detail.value.vertical;
         this._config = _config;
 
         const event = new CustomEvent("config-changed", {
@@ -581,6 +692,7 @@ class ActivityManagerCardEditor extends LitElement {
                     { name: "icon", selector: { icon: {} } },
                     { name: "actionTitle", selector: { text: {} } },
                     { name: "showDueOnly", selector: { boolean: {} } },
+                    { name: "vertical", selector: { boolean: {} } },
                     {
                         name: "soonHours",
                         selector: { number: { unit_of_measurement: "hours" } },
@@ -599,6 +711,7 @@ class ActivityManagerCardEditor extends LitElement {
             actionTitle: "Action button label",
             showDueOnly: "Only show activities that are due",
             soonHours: "Soon to be due (styles the activity)",
+            vertical: "Vertical layout",
             mode: "Manage mode",
         };
         return labelMap[schema.name];
