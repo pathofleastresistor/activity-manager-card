@@ -88,6 +88,14 @@ class ActivityManagerCard extends LitElement {
     }
 
     renderAddDialog() {
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, "0");
+        const day = date.getDate().toString().padStart(2, "0");
+        const hours = date.getHours().toString().padStart(2, "0");
+        const minutes = date.getMinutes().toString().padStart(2, "0");
+        let val = `${year}-${month}-${day}T${hours}:${minutes}`;
+
         return html`
             <ha-dialog class="manage-form" heading="Add Activity">
                 <form>
@@ -110,7 +118,7 @@ class ActivityManagerCard extends LitElement {
                         </div>
                         <ha-textfield type="text" id="icon" label="Activity Icon">
                         </ha-textfield>
-                        <ha-textfield type="datetime-local" id="last-completed" label="Activity Last Completed">
+                        <ha-textfield type="datetime-local" id="last-completed" label="Activity Last Completed" value=${val}>
                         </ha-textfield>
                     </div>
                     </ha-form>
@@ -132,8 +140,8 @@ class ActivityManagerCard extends LitElement {
         const day = date.getDate().toString().padStart(2, "0");
         const hours = date.getHours().toString().padStart(2, "0");
         const minutes = date.getMinutes().toString().padStart(2, "0");
-
         let val = `${year}-${month}-${day}T${hours}:${minutes}`;
+
         return html`
             <ha-dialog class="confirm-update" heading="Confirm">
                 <ha-textfield
