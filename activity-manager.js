@@ -66,10 +66,11 @@ class ActivityManagerCard extends LitElement {
         }
     }
 
-    getActionButton(item) {
+    renderActionButton(item) {
         return html`
             <div class="right am-action">
                 <mwc-button
+                    outlined
                     class="button"
                     @click=${this._config.mode == "basic"
                         ? this.update_activity
@@ -186,7 +187,7 @@ class ActivityManagerCard extends LitElement {
                                             ${this.formatTimeAgo(activity.due)}
                                         </div>
                                     </div>
-                                    ${this.getActionButton(activity)}
+                                    ${this.renderActionButton(activity)}
                                 </div>
                             `
                         )}
@@ -402,7 +403,7 @@ class ActivityManagerCard extends LitElement {
         }
         .am-item {
             display: grid;
-            grid-template-columns: auto min-content;
+            grid-template-columns: auto max-content;
             padding: 12px;
             #color: var(--am-item-primary-color, #ffffff);
             #background-color: var(--am-item-background-color, #000000ff);
