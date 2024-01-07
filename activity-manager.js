@@ -1,13 +1,43 @@
 import {
     LitElement,
     html,
-    until,
     css,
     repeat,
 } from "https://cdn.jsdelivr.net/gh/lit/dist@2/all/lit-all.min.js";
 
+export const utils = {
+    _formatTimeAgo: (date) => {
+        const formatter = new Intl.RelativeTimeFormat(undefined, {
+            numeric: "auto",
+        });
+
+        const DIVISIONS = [
+            { amount: 60, name: "seconds" },
+            { amount: 60, name: "minutes" },
+            { amount: 24, name: "hours" },
+            { amount: 7, name: "days" },
+            { amount: 4.34524, name: "weeks" },
+            { amount: 12, name: "months" },
+            { amount: Number.POSITIVE_INFINITY, name: "years" },
+        ];
+        let duration = (date - new Date()) / 1000;
+
+        for (let i = 0; i < DIVISIONS.length; i++) {
+            const division = DIVISIONS[i];
+            if (Math.abs(duration) < division.amount) {
+                return formatter.format(Math.round(duration), division.name);
+            }
+            duration /= division.amount;
+        }
+    },
+
+    _getNumber: (value, defaultValue) => {
+        const num = parseInt(value, 10);
+        return isNaN(num) ? defaultValue : num;
+    },
+};
+
 class ActivityManagerCard extends LitElement {
-    _current_id = null;
     _currentItem = null;
     _activities = [];
 
@@ -59,49 +89,26 @@ class ActivityManagerCard extends LitElement {
         }
     }
 
+    _ifVertical(vContent) {
+        if (this._config.vertical) return vContent;
+        else "";
+    }
+
+    _ifDue(activity, due, dueSoon) {
+        if (activity.difference < 0) return due;
+        if (activity.difference < this._config.soonHours * 60 * 60 * 1000)
+            return dueSoon;
+        return "";
+    }
+
     render() {
         return html`
             <ha-card>
-                <div class="header">
-                    <div class="icon-container">
-                        <ha-icon icon="${this._config.icon}"></ha-icon>
-                    </div>
-                    <div class="info-container">
-                        <div class="primary">${this._config.header}</div>
-                    </div>
-                    <div class="action-container">
-                        <mwc-icon-button
-                            @click=${() => {
-                                this.shadowRoot
-                                    .querySelector(".manage-form")
-                                    .show();
-                            }}
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                            >
-                                <path
-                                    d="M14.3 21.7C13.6 21.9 12.8 22 12 22C6.5 22 2 17.5 2 12S6.5 2 12 2C13.3 2 14.6 2.3 15.8 2.7L14.2 4.3C13.5 4.1 12.8 4 12 4C7.6 4 4 7.6 4 12S7.6 20 12 20C12.4 20 12.9 20 13.3 19.9C13.5 20.6 13.9 21.2 14.3 21.7M7.9 10.1L6.5 11.5L11 16L21 6L19.6 4.6L11 13.2L7.9 10.1M18 14V17H15V19H18V22H20V19H23V17H20V14H18Z"
-                                />
-                            </svg>
-                        </mwc-icon-button>
-                        <mwc-icon-button @click=${this._switchMode}>
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                            >
-                                <path
-                                    d="M12,16A2,2 0 0,1 14,18A2,2 0 0,1 12,20A2,2 0 0,1 10,18A2,2 0 0,1 12,16M12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12A2,2 0 0,1 12,10M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4Z"
-                                />
-                            </svg>
-                        </mwc-icon-button>
-                    </div>
-                </div>
+                ${this._renderHeader()}
                 <div class="content">
                     <div
                         class="am-grid 
-                        ${this._config.vertical ? "am-vertical" : ""}"
+                        ${this._ifVertical("am-vertical")}"
                     >
                         ${repeat(
                             this._activities,
@@ -111,21 +118,18 @@ class ActivityManagerCard extends LitElement {
                                     @click=${() =>
                                         this._showUpdateDialog(activity)}
                                     class="am-item 
-                                    ${this._config.vertical
-                                        ? "am-item-vertical"
-                                        : ""}
-                                    ${activity.difference < 0 ? "am-due" : ""}
-                                    ${activity.difference > 0 &&
-                                    activity.difference <
-                                        this._config.soonHours * 60 * 60 * 1000
-                                        ? "am-due-soon"
-                                        : ""}"
+                                    ${this._ifVertical("am-item-vertical")}
+                                    ${this._ifDue(
+                                        activity,
+                                        "am-due",
+                                        "am-due-soon"
+                                    )}"
                                 >
                                     <div
                                         class="am-icon 
-                                            ${this._config.vertical
-                                            ? "am-icon-vertical"
-                                            : ""}"
+                                            ${this._ifVertical(
+                                            "am-icon-vertical"
+                                        )}"
                                     >
                                         <ha-icon
                                             icon="${activity.icon
@@ -139,11 +143,12 @@ class ActivityManagerCard extends LitElement {
                                             ${activity.name}
                                         </div>
                                         <div class="am-item-secondary">
-                                            ${this.formatTimeAgo(activity.due)}
+                                            ${utils._formatTimeAgo(
+                                                activity.due
+                                            )}
                                         </div>
                                     </span>
                                     ${this._renderActionButton(activity)}
-                                    <mwc-ripple></mwc-ripple>
                                 </div>
                             `
                         )}
@@ -178,7 +183,8 @@ class ActivityManagerCard extends LitElement {
                 ${this._config.mode == "manage"
                     ? html`
                           <mwc-icon-button
-                              @click=${() => this._showRemoveDialog(activity)}
+                              @click=${(ev) =>
+                                  this._showRemoveDialog(ev, activity)}
                               data-am-id=${activity.id}
                           >
                               <svg
@@ -255,6 +261,47 @@ class ActivityManagerCard extends LitElement {
         `;
     }
 
+    _renderHeader() {
+        return html`
+            <div class="header">
+                <div class="icon-container">
+                    <ha-icon icon="${this._config.icon}"></ha-icon>
+                </div>
+                <div class="info-container">
+                    <div class="primary">${this._config.header}</div>
+                </div>
+                <div class="action-container">
+                    <mwc-icon-button
+                        @click=${() => {
+                            this.shadowRoot
+                                .querySelector(".manage-form")
+                                .show();
+                        }}
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                d="M14.3 21.7C13.6 21.9 12.8 22 12 22C6.5 22 2 17.5 2 12S6.5 2 12 2C13.3 2 14.6 2.3 15.8 2.7L14.2 4.3C13.5 4.1 12.8 4 12 4C7.6 4 4 7.6 4 12S7.6 20 12 20C12.4 20 12.9 20 13.3 19.9C13.5 20.6 13.9 21.2 14.3 21.7M7.9 10.1L6.5 11.5L11 16L21 6L19.6 4.6L11 13.2L7.9 10.1M18 14V17H15V19H18V22H20V19H23V17H20V14H18Z"
+                            />
+                        </svg>
+                    </mwc-icon-button>
+                    <mwc-icon-button @click=${this._switchMode}>
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                d="M12,16A2,2 0 0,1 14,18A2,2 0 0,1 12,20A2,2 0 0,1 10,18A2,2 0 0,1 12,16M12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12A2,2 0 0,1 12,10M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4Z"
+                            />
+                        </svg>
+                    </mwc-icon-button>
+                </div>
+            </div>
+        `;
+    }
+
     _renderUpdateDialog() {
         const date = new Date();
         const year = date.getFullYear();
@@ -317,19 +364,19 @@ class ActivityManagerCard extends LitElement {
         let last_completed = this.shadowRoot.querySelector("#last-completed");
 
         let frequency = {};
-        frequency.days = this._getNumber(
+        frequency.days = utils._getNumber(
             this.shadowRoot.querySelector("#frequency-day").value,
             0
         );
-        frequency.hours = this._getNumber(
+        frequency.hours = utils._getNumber(
             this.shadowRoot.querySelector("#frequency-hour").value,
             0
         );
-        frequency.minutes = this._getNumber(
+        frequency.minutes = utils._getNumber(
             this.shadowRoot.querySelector("#frequency-minute").value,
             0
         );
-        frequency.seconds = this._getNumber(
+        frequency.seconds = utils._getNumber(
             this.shadowRoot.querySelector("#frequency-second").value,
             0
         );
@@ -394,7 +441,8 @@ class ActivityManagerCard extends LitElement {
         this.requestUpdate();
     };
 
-    _showRemoveDialog(item) {
+    _showRemoveDialog(ev, item) {
+        ev.stopPropagation();
         this._currentItem = item;
         this.requestUpdate();
         this.shadowRoot.querySelector(".confirm-remove").show();
@@ -511,6 +559,8 @@ class ActivityManagerCard extends LitElement {
         }
 
         .am-item {
+            position: relative;
+            display: inline-block;
             display: flex;
             #color: var(--am-item-primary-color, #ffffff);
             #background-color: var(--am-item-background-color, #000000ff);
@@ -579,36 +629,6 @@ class ActivityManagerCard extends LitElement {
             gap: 12px;
         }
     `;
-
-    formatTimeAgo(date) {
-        const formatter = new Intl.RelativeTimeFormat(undefined, {
-            numeric: "auto",
-        });
-
-        const DIVISIONS = [
-            { amount: 60, name: "seconds" },
-            { amount: 60, name: "minutes" },
-            { amount: 24, name: "hours" },
-            { amount: 7, name: "days" },
-            { amount: 4.34524, name: "weeks" },
-            { amount: 12, name: "months" },
-            { amount: Number.POSITIVE_INFINITY, name: "years" },
-        ];
-        let duration = (date - new Date()) / 1000;
-
-        for (let i = 0; i < DIVISIONS.length; i++) {
-            const division = DIVISIONS[i];
-            if (Math.abs(duration) < division.amount) {
-                return formatter.format(Math.round(duration), division.name);
-            }
-            duration /= division.amount;
-        }
-    }
-
-    _getNumber(value, defaultValue) {
-        const num = parseInt(value, 10);
-        return isNaN(num) ? defaultValue : num;
-    }
 }
 
 class ActivityManagerCardEditor extends LitElement {
