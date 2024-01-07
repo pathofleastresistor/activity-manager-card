@@ -368,7 +368,6 @@ class ActivityManagerCard extends LitElement {
     remove_activity(ev) {
         ev.stopPropagation();
         const item_id = ev.target.dataset.amId;
-        this._remove_activity(item_id);
         this._hass.callWS({
             type: "activity_manager/remove",
             item_id: item_id,
