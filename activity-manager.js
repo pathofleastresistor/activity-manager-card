@@ -486,8 +486,6 @@ class ActivityManagerCardEditor extends LitElement {
         _config.showDueOnly = ev.detail.value.showDueOnly;
         _config.actionTitle = ev.detail.value.actionTitle;
         _config.icon = ev.detail.value.icon;
-        _config.mode = ev.detail.value.mode;
-
         this._config = _config;
 
         const event = new CustomEvent("config-changed", {
@@ -510,18 +508,6 @@ class ActivityManagerCardEditor extends LitElement {
                     { name: "category", selector: { text: { type: "text" } } },
                     { name: "icon", selector: { icon: {} } },
                     { name: "actionTitle", selector: { text: {} } },
-                    {
-                        name: "mode",
-                        selector: {
-                            select: {
-                                mode: "dropdown",
-                                options: [
-                                    { label: "Basic", value: "basic" },
-                                    { label: "Manager", value: "manage" },
-                                ],
-                            },
-                        },
-                    },
                     { name: "showDueOnly", selector: { boolean: {} } },
                     {
                         name: "soonHours",
