@@ -7,6 +7,8 @@ import {
 } from "https://cdn.jsdelivr.net/gh/lit/dist@2/all/lit-all.min.js";
 
 class ActivityManagerCard extends LitElement {
+    _current_id = null;
+
     static getConfigElement() {
         return document.createElement("activity-manager-card-editor");
     }
@@ -73,7 +75,7 @@ class ActivityManagerCard extends LitElement {
                     outlined
                     class="button"
                     @click=${this._config.mode == "basic"
-                        ? this.update_activity
+                        ? this.showUpdateDialog
                         : this.remove_activity}
                     data-am-id=${item.id}
                 >
@@ -121,6 +123,38 @@ class ActivityManagerCard extends LitElement {
                 </mwc-button>
             </ha-dialog>
             `;
+    }
+
+    renderConfirmDialog() {
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, "0");
+        const day = date.getDate().toString().padStart(2, "0");
+        const hours = date.getHours().toString().padStart(2, "0");
+        const minutes = date.getMinutes().toString().padStart(2, "0");
+
+        let val = `${year}-${month}-${day}T${hours}:${minutes}`;
+        return html`
+            <ha-dialog class="confirm-update" heading="Confirm">
+                <ha-textfield
+                    type="datetime-local"
+                    id="update-last-completed"
+                    label="Activity Last Completed"
+                    value=${val}
+                >
+                </ha-textfield>
+                <mwc-button
+                    slot="primaryAction"
+                    dialogAction="discard"
+                    @click=${this.updateActivity}
+                >
+                    Confirm
+                </mwc-button>
+                <mwc-button slot="secondaryAction" dialogAction="cancel">
+                    Cancel
+                </mwc-button>
+            </ha-dialog>
+        `;
     }
 
     render() {
@@ -194,7 +228,7 @@ class ActivityManagerCard extends LitElement {
                     </div>
                 </div>
             </ha-card>
-            ${this.renderAddDialog()}
+            ${this.renderAddDialog()} ${this.renderConfirmDialog()}
         `;
     }
 
@@ -302,37 +336,35 @@ class ActivityManagerCard extends LitElement {
         return isNaN(num) ? defaultValue : num;
     }
 
-    _update_activity = async (id) => {
-        const result = await this._hass.callWS({
-            type: "activity_manager/update",
-            item_id: id,
-        });
-
-        return result;
-    };
-
-    update_activity(ev) {
-        var result = confirm("Did you complete this?");
-        if (result) {
-            ev.stopPropagation();
-            const item_id = ev.target.dataset.amId;
-            this._update_activity(item_id).then(() => this.fetchData());
-        }
+    showUpdateDialog(ev) {
+        this.shadowRoot.querySelector(".confirm-update").show();
+        this._current_id = ev.target.dataset.amId;
     }
 
-    _remove_activity = async (item_id) => {
-        const result = await this._hass.callWS({
-            type: "activity_manager/remove",
-            item_id: item_id,
+    updateActivity() {
+        if (this._current_id == null) return;
+
+        let last_completed = this.shadowRoot.querySelector(
+            "#update-last-completed"
+        );
+
+        this._hass.callWS({
+            type: "activity_manager/update",
+            item_id: this._current_id,
+            last_completed: last_completed.value,
         });
 
-        return result;
-    };
+        this._current_id = null;
+    }
 
     remove_activity(ev) {
         ev.stopPropagation();
         const item_id = ev.target.dataset.amId;
         this._remove_activity(item_id);
+        this._hass.callWS({
+            type: "activity_manager/remove",
+            item_id: item_id,
+        });
     }
 
     static styles = css`
