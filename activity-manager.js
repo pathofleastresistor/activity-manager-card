@@ -501,6 +501,8 @@ class ActivityManagerCard extends LitElement {
 }
 
 class ActivityManagerCardEditor extends LitElement {
+    _categories = [];
+
     static get properties() {
         return {
             hass: {},
@@ -514,6 +516,28 @@ class ActivityManagerCardEditor extends LitElement {
 
     set hass(hass) {
         this._hass = hass;
+        console.log(this._hass);
+
+        Object.keys(this._hass["states"]).forEach((key) => {
+            let entity = this._hass["states"][key];
+            if ("attributes" in entity) {
+                if ("integration" in entity.attributes) {
+                    if (entity.attributes.integration == "activity_manager") {
+                        if (
+                            !this._categories.some(
+                                (item) =>
+                                    item.label === entity.attributes.category
+                            )
+                        ) {
+                            this._categories.push({
+                                label: entity.attributes.category,
+                                value: entity.attributes.category,
+                            });
+                        }
+                    }
+                }
+            }
+        });
     }
 
     _valueChanged(ev) {
@@ -545,7 +569,15 @@ class ActivityManagerCardEditor extends LitElement {
                 .hass=${this._hass}
                 .data=${this._config}
                 .schema=${[
-                    { name: "category", selector: { text: { type: "text" } } },
+                    {
+                        name: "category",
+                        selector: {
+                            select: {
+                                options: this._categories,
+                                custom_value: true,
+                            },
+                        },
+                    },
                     { name: "icon", selector: { icon: {} } },
                     { name: "actionTitle", selector: { text: {} } },
                     { name: "showDueOnly", selector: { boolean: {} } },
