@@ -63,14 +63,16 @@ class ActivityManagerCard extends LitElement {
         this._config.header =
             this._config.header || this._config.category || "Activities";
         this._config.showDueOnly = config.showDueOnly || false;
-        this._config.actionTitle = config.actionTitle || "Did it!";
         this._config.mode = config.mode || "basic";
         this._config.soonHours = config.soonHours || 24;
         this._config.icon = config.icon || "mdi:format-list-checkbox";
-        this._config.vertical = config.vertical || false;
 
         this._runOnce = false;
         this._fetchData();
+    }
+
+    firstUpdated() {
+        (async () => await loadHaForm())();
     }
 
     set hass(hass) {
@@ -89,11 +91,6 @@ class ActivityManagerCard extends LitElement {
         }
     }
 
-    _ifVertical(vContent) {
-        if (this._config.vertical) return vContent;
-        else "";
-    }
-
     _ifDue(activity, due, dueSoon) {
         if (activity.difference < 0) return due;
         if (activity.difference < this._config.soonHours * 60 * 60 * 1000)
@@ -106,10 +103,7 @@ class ActivityManagerCard extends LitElement {
             <ha-card>
                 ${this._renderHeader()}
                 <div class="content">
-                    <div
-                        class="am-grid 
-                        ${this._ifVertical("am-vertical")}"
-                    >
+                    <div class="am-grid">
                         ${repeat(
                             this._activities,
                             (activity) => activity.name,
@@ -117,20 +111,14 @@ class ActivityManagerCard extends LitElement {
                                 <div
                                     @click=${() =>
                                         this._showUpdateDialog(activity)}
-                                    class="am-item 
-                                    ${this._ifVertical("am-item-vertical")}
+                                    class="am-item
                                     ${this._ifDue(
                                         activity,
                                         "am-due",
                                         "am-due-soon"
                                     )}"
                                 >
-                                    <div
-                                        class="am-icon 
-                                            ${this._ifVertical(
-                                            "am-icon-vertical"
-                                        )}"
-                                    >
+                                    <div class="am-icon">
                                         <ha-icon
                                             icon="${activity.icon
                                                 ? activity.icon
@@ -163,23 +151,6 @@ class ActivityManagerCard extends LitElement {
     _renderActionButton(activity) {
         return html`
             <div class="am-action">
-                ${!this._config.vertical
-                    ? html`
-                          <mwc-icon-button
-                              @click=${() => this._showUpdateDialog(activity)}
-                              data-am-id=${activity.id}
-                          >
-                              <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 24 24"
-                              >
-                                  <path
-                                      d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"
-                                  />
-                              </svg>
-                          </mwc-icon-button>
-                      `
-                    : ``}
                 ${this._config.mode == "manage"
                     ? html`
                           <mwc-icon-button
@@ -222,25 +193,24 @@ class ActivityManagerCard extends LitElement {
                             value="${this._config["category"]}" />
 
                         <div class="form-item">
-                            <label for="name">Name</label>
-                            <ha-textfield type="text" id="name">
+                            <ha-textfield type="text" id="name" placeholder="Name" style="grid-column: 1 / span 2">
                             </ha-textfield>
                         </div>
                         
                         <div class="form-item">
                             <label for="frequency-day">Frequency</label>
                             <div class="duration-input">
-                                <ha-textfield type="number" label="dd" id="frequency-day" value="0"></ha-textfield>
-                                <ha-textfield type="number" label="hh" id="frequency-hour" value="0"></ha-textfield>
-                                <ha-textfield type="number" label="mm" id="frequency-minute" value="0"></ha-textfield>
-                                <ha-textfield type="number" label="ss"id="frequency-second" value="0"></ha-textfield>
+                                <ha-textfield type="number" inputmode="numeric" no-spinner label="dd" id="frequency-day" value="0"></ha-textfield>
+                                <ha-textfield type="number" inputmode="numeric" no-spinner label="hh" id="frequency-hour" value="0"></ha-textfield>
+                                <ha-textfield type="number" inputmode="numeric" no-spinner label="mm" id="frequency-minute" value="0"></ha-textfield>
+                                <ha-textfield type="number" inputmode="numeric" no-spinner label="ss"id="frequency-second" value="0"></ha-textfield>
                             </div>
                         </div>
 
                         <div class="form-item">
                             <label for="icon">Icon</label>
-                            <ha-textfield type="text" id="icon">
-                            </ha-textfield>
+                            <ha-icon-picker type="text" id="icon">
+                            </ha-icon-picker>
                         </div>
 
                         <div class="form-item">
@@ -314,6 +284,11 @@ class ActivityManagerCard extends LitElement {
         return html`
             <ha-dialog class="confirm-update" heading="Confirm">
                 <div class="confirm-grid">
+                    <div>
+                        Yay, you did it! 🎉 If you completed this earlier, feel
+                        free to change the date and time below. Great job on
+                        completing your activity!
+                    </div>
                     <ha-textfield
                         type="datetime-local"
                         id="update-last-completed"
@@ -508,7 +483,7 @@ class ActivityManagerCard extends LitElement {
             padding-top: 10px;
             display: grid;
             align-items: center;
-            gap: 10px;
+            gap: 24px;
         }
         .am-add-button {
             padding-top: 10px;
@@ -553,11 +528,6 @@ class ActivityManagerCard extends LitElement {
             gap: 12px;
         }
 
-        .am-vertical {
-            grid-template-columns: repeat(2, 1fr);
-            text-align: center;
-        }
-
         .am-item {
             position: relative;
             display: inline-block;
@@ -570,10 +540,6 @@ class ActivityManagerCard extends LitElement {
             cursor: pointer;
         }
 
-        .am-item-vertical {
-            flex-direction: column;
-        }
-
         .am-icon {
             display: block;
             border-radius: 50%;
@@ -581,11 +547,6 @@ class ActivityManagerCard extends LitElement {
             padding: 5px;
             margin-right: 12px;
             --mdc-icon-size: 24px;
-        }
-
-        .am-icon-vertical {
-            margin-right: 0;
-            margin-bottom: 12px;
         }
 
         .am-item-name {
@@ -596,14 +557,17 @@ class ActivityManagerCard extends LitElement {
             font-size: var(--am-item-primary-font-size, 14px);
             font-weight: bold;
         }
+
         .am-item-secondary {
             font-size: var(--am-item-secondary-font-size, 12px);
         }
+
         .am-action {
             display: grid;
             grid-template-columns: auto auto;
             align-items: center;
         }
+
         .am-due-soon {
             color: var(--am-item-due-soon-primary-color, #ffffff);
             background-color: var(
@@ -612,6 +576,7 @@ class ActivityManagerCard extends LitElement {
             );
             --mdc-theme-primary: var(--am-item-due-soon-primary-color);
         }
+
         .am-due {
             color: var(--am-item-due-primary-color, #ffffff);
             background-color: var(--am-item-due-background-color, #00000014);
@@ -624,6 +589,12 @@ class ActivityManagerCard extends LitElement {
             align-items: center;
             --mdc-shape-small: 0px;
         }
+
+        .form-item input::-webkit-outer-spin-button,
+        .form-item input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+        }
+
         .confirm-grid {
             display: grid;
             gap: 12px;
@@ -678,9 +649,7 @@ class ActivityManagerCardEditor extends LitElement {
         _config.category = ev.detail.value.category;
         _config.soonHours = ev.detail.value.soonHours;
         _config.showDueOnly = ev.detail.value.showDueOnly;
-        _config.actionTitle = ev.detail.value.actionTitle;
         _config.icon = ev.detail.value.icon;
-        _config.vertical = ev.detail.value.vertical;
         this._config = _config;
 
         const event = new CustomEvent("config-changed", {
@@ -710,9 +679,7 @@ class ActivityManagerCardEditor extends LitElement {
                         },
                     },
                     { name: "icon", selector: { icon: {} } },
-                    { name: "actionTitle", selector: { text: {} } },
                     { name: "showDueOnly", selector: { boolean: {} } },
-                    { name: "vertical", selector: { boolean: {} } },
                     {
                         name: "soonHours",
                         selector: { number: { unit_of_measurement: "hours" } },
@@ -728,10 +695,8 @@ class ActivityManagerCardEditor extends LitElement {
         var labelMap = {
             category: "Category",
             icon: "Icon",
-            actionTitle: "Action button label",
             showDueOnly: "Only show activities that are due",
             soonHours: "Soon to be due (styles the activity)",
-            vertical: "Vertical layout",
             mode: "Manage mode",
         };
         return labelMap[schema.name];
@@ -750,3 +715,29 @@ window.customCards.push({
     name: "Activity Manager Card",
     preview: true, // Optional - defaults to false
 });
+
+export const loadHaForm = async () => {
+    if (
+        customElements.get("ha-checkbox") &&
+        customElements.get("ha-slider") &&
+        customElements.get("ha-combo-box")
+    )
+        return;
+
+    await customElements.whenDefined("partial-panel-resolver");
+    const ppr = document.createElement("partial-panel-resolver");
+    ppr.hass = {
+        panels: [
+            {
+                url_path: "tmp",
+                component_name: "config",
+            },
+        ],
+    };
+    ppr._updateRoutes();
+    await ppr.routerOptions.routes.tmp.load();
+
+    await customElements.whenDefined("ha-panel-config");
+    const cpr = document.createElement("ha-panel-config");
+    await cpr.routerOptions.routes.automation.load();
+};
