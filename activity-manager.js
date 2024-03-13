@@ -3,7 +3,7 @@ import {
     html,
     css,
     repeat,
-} from "lit-all.min.js";
+} from "/hacsfiles/activity-manager-card/lit-all.min.js";
 
 export const utils = {
     _formatTimeAgo: (date) => {
