@@ -3,7 +3,7 @@ import {
     html,
     css,
     repeat,
-} from "https://cdn.jsdelivr.net/gh/lit/dist@2/all/lit-all.min.js";
+} from "/hacsfiles/activity-manager-card/lit-all.min.js";
 
 export const utils = {
     _formatTimeAgo: (date) => {
@@ -196,7 +196,7 @@ class ActivityManagerCard extends LitElement {
                             <ha-textfield type="text" id="name" placeholder="Name" style="grid-column: 1 / span 2">
                             </ha-textfield>
                         </div>
-                        
+
                         <div class="form-item">
                             <label for="frequency-day">Frequency</label>
                             <div class="duration-input">
