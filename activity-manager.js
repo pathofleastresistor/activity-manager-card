@@ -2,614 +2,1022 @@ import {
     LitElement,
     html,
     css,
-    repeat,
-} from "https://cdn.jsdelivr.net/gh/lit/dist@2/all/lit-all.min.js";
+} from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { repeat } from "https://unpkg.com/lit@2.8.0/directives/repeat.js?module";
 
-export const utils = {
-    _formatTimeAgo: (date) => {
-        const formatter = new Intl.RelativeTimeFormat(undefined, {
-            numeric: "auto",
-        });
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-        const DIVISIONS = [
-            { amount: 60, name: "seconds" },
-            { amount: 60, name: "minutes" },
-            { amount: 24, name: "hours" },
-            { amount: 7, name: "days" },
-            { amount: 4.34524, name: "weeks" },
-            { amount: 12, name: "months" },
-            { amount: Number.POSITIVE_INFINITY, name: "years" },
-        ];
-        let duration = (date - new Date()) / 1000;
+function formatRelative(date) {
+    const fmt = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+    const DIVISIONS = [
+        { amount: 60, name: "seconds" },
+        { amount: 60, name: "minutes" },
+        { amount: 24, name: "hours" },
+        { amount: 7, name: "days" },
+        { amount: 4.34524, name: "weeks" },
+        { amount: 12, name: "months" },
+        { amount: Number.POSITIVE_INFINITY, name: "years" },
+    ];
+    let dur = (date - Date.now()) / 1000;
+    for (const div of DIVISIONS) {
+        if (Math.abs(dur) < div.amount)
+            return fmt.format(Math.round(dur), div.name);
+        dur /= div.amount;
+    }
+}
 
-        for (let i = 0; i < DIVISIONS.length; i++) {
-            const division = DIVISIONS[i];
-            if (Math.abs(duration) < division.amount) {
-                return formatter.format(Math.round(duration), division.name);
-            }
-            duration /= division.amount;
-        }
-    },
+function localDatetimeValue(date = new Date()) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
-    _getNumber: (value, defaultValue) => {
-        const num = parseInt(value, 10);
-        return isNaN(num) ? defaultValue : num;
-    },
-};
+function datetimeLocalToISO(value) {
+    if (!value) return new Date().toISOString();
+    const normalised = value.length === 16 ? value + ":00" : value;
+    const d = new Date(normalised);
+    return isNaN(d) ? new Date().toISOString() : d.toISOString();
+}
+
+function getNumber(value, def = 0) {
+    const n = parseInt(value, 10);
+    return isNaN(n) ? def : n;
+}
+
+function statusClass(activity, soonMs) {
+    if (activity.difference < 0) return "overdue";
+    if (activity.difference < soonMs) return "soon";
+    return "ok";
+}
+
+// Returns 0–1: how far through the interval (1 = due now, >1 = overdue, clamped to 1 for arc)
+function progressFraction(item) {
+    if (!item.frequency_ms || item.frequency_ms <= 0) return 0;
+    const elapsed = item.frequency_ms - item.difference;
+    return Math.max(0, Math.min(1, elapsed / item.frequency_ms));
+}
+
+// SVG arc path for a circle progress ring. r = radius, fraction = 0–1.
+function arcPath(r, fraction) {
+    if (fraction >= 1) {
+        // Full circle — two arcs to avoid degenerate path
+        return `M ${r} 0 A ${r} ${r} 0 1 1 ${r - 0.001} 0 Z`;
+    }
+    const angle = fraction * 2 * Math.PI - Math.PI / 2;
+    const x = r + r * Math.cos(angle);
+    const y = r + r * Math.sin(angle);
+    const large = fraction > 0.5 ? 1 : 0;
+    return `M ${r} 0 A ${r} ${r} 0 ${large} 1 ${x} ${y}`;
+}
+
+// ---------------------------------------------------------------------------
+// Main card
+// ---------------------------------------------------------------------------
 
 class ActivityManagerCard extends LitElement {
-    _currentItem = null;
-    _activities = [];
-
     static getConfigElement() {
         return document.createElement("activity-manager-card-editor");
     }
 
     static getStubConfig() {
-        return {
-            category: "Activities",
-        };
+        return { entry_id: null, category: null };
     }
 
     static get properties() {
         return {
-            _hass: {},
-            _config: {},
+            _hass: { attribute: false },
+            _config: { attribute: false },
+            _activities: { attribute: false },
+            // "view" | "manage"
+            _panel: { attribute: false },
+            // The activity currently being edited/deleted (manage panel)
+            _editing: { attribute: false },
+            // "add" | "edit" | "delete" — which manage sub-view to show
+            _manageView: { attribute: false },
+            // Activity pending "mark done" confirmation (null = dialog closed)
+            _confirming: { attribute: false },
         };
     }
 
-    setConfig(config) {
-        this._config = structuredClone(config);
-        this._config.header =
-            this._config.header || this._config.category || "Activities";
-        this._config.showDueOnly = config.showDueOnly || false;
-        this._config.mode = config.mode || "basic";
-        this._config.soonHours = config.soonHours || 24;
-        this._config.icon = config.icon || "mdi:format-list-checkbox";
+    constructor() {
+        super();
+        this._activities = [];
+        this._panel = "view";
+        this._editing = null;
+        this._manageView = "list";
+        this._confirming = null;
+        this._unsubEvents = null;
+        this._disconnected = false;
+    }
 
-        this._runOnce = false;
-        this._fetchData();
+    setConfig(config) {
+        this._config = {
+            header: config.header || config.category || "Activities",
+            icon: config.icon || "mdi:format-list-checkbox",
+            entry_id: config.entry_id || null,
+            category: config.category || null,
+            showDueOnly: config.showDueOnly || false,
+            soonHours: config.soonHours != null ? config.soonHours : 24,
+            compact: config.compact || false,
+        };
     }
 
     firstUpdated() {
-        (async () => await loadHaForm())();
+        loadHaComponents().then(() => this.requestUpdate());
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        this._disconnected = false;
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        this._disconnected = true;
+        this._unsubEvents?.();
+        this._unsubEvents = null;
     }
 
     set hass(hass) {
+        const first = !this._hass;
         this._hass = hass;
-        if (!this._runOnce) {
-            // Update when loading
+        if (first) {
             this._fetchData();
-
-            // Update when changes are made
-            this._hass.connection.subscribeEvents(
-                () => this._fetchData(),
-                "activity_manager_updated"
-            );
-
-            this._runOnce = true;
+            hass.connection
+                .subscribeEvents(() => this._fetchData(), "activity_manager_updated")
+                .then((unsub) => {
+                    if (this._disconnected) {
+                        unsub();
+                    } else {
+                        this._unsubEvents = unsub;
+                    }
+                })
+                .catch((err) => console.error("[ActivityManagerCard] Failed to subscribe to events:", err));
         }
     }
 
-    _ifDue(activity, due, dueSoon) {
-        if (activity.difference < 0) return due;
-        if (activity.difference < this._config.soonHours * 60 * 60 * 1000)
-            return dueSoon;
-        return "";
-    }
+    // -----------------------------------------------------------------------
+    // Data
+    // -----------------------------------------------------------------------
+
+    _fetchData = async () => {
+        if (!this._hass) return;
+        const msg = { type: "activity_manager/items" };
+        if (this._config.entry_id) msg.entry_id = this._config.entry_id;
+        let raw;
+        try {
+            raw = (await this._hass.callWS(msg)) || [];
+        } catch (err) {
+            console.error("[ActivityManagerCard] Failed to fetch activities:", err);
+            return;
+        }
+        const soonMs = (this._config.soonHours ?? 24) * 3_600_000;
+        this._activities = raw
+            .map((item) => {
+                const completed = new Date(item.last_completed);
+                const due = new Date(completed.valueOf() + item.frequency_ms);
+                const difference = due - Date.now();
+                return { ...item, due, difference, _status: statusClass({ difference }, soonMs) };
+            })
+            .filter((item) => !this._config.category || item.category === this._config.category)
+            .filter((item) => !this._config.showDueOnly || item.difference < 0)
+            .sort((a, b) => {
+                const catCmp = a.category.toLowerCase().localeCompare(b.category.toLowerCase());
+                return catCmp !== 0 ? catCmp : a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+            });
+    };
+
+    // -----------------------------------------------------------------------
+    // Render
+    // -----------------------------------------------------------------------
 
     render() {
+        if (!this._config) return html``;
         return html`
             <ha-card>
                 ${this._renderHeader()}
-                <div class="content">
-                    <div class="am-grid">
-                        ${repeat(
-                            this._activities,
-                            (activity) => activity.name,
-                            (activity) => html`
-                                <div
-                                    @click=${() =>
-                                        this._showUpdateDialog(activity)}
-                                    class="am-item
-                                    ${this._ifDue(
-                                        activity,
-                                        "am-due",
-                                        "am-due-soon"
-                                    )}"
-                                >
-                                    <div class="am-icon">
-                                        <ha-icon
-                                            icon="${activity.icon
-                                                ? activity.icon
-                                                : "mdi:check-circle-outline"}"
-                                        >
-                                        </ha-icon>
-                                    </div>
-                                    <span class="am-item-name">
-                                        <div class="am-item-primary">
-                                            ${activity.name}
-                                        </div>
-                                        <div class="am-item-secondary">
-                                            ${utils._formatTimeAgo(
-                                                activity.due
-                                            )}
-                                        </div>
-                                    </span>
-                                    ${this._renderActionButton(activity)}
-                                </div>
-                            `
-                        )}
-                    </div>
+                <div class="card-content">
+                    ${this._confirming
+                        ? this._renderConfirmDialog()
+                        : this._panel === "view" ? this._renderList() : this._renderManagePanel()}
                 </div>
             </ha-card>
-            ${this._renderAddDialog()} ${this._renderUpdateDialog()}
-            ${this._renderRemoveDialog()}
-        `;
-    }
-
-    _renderActionButton(activity) {
-        return html`
-            <div class="am-action">
-                ${this._config.mode == "manage"
-                    ? html`
-                          <mwc-icon-button
-                              @click=${(ev) =>
-                                  this._showRemoveDialog(ev, activity)}
-                              data-am-id=${activity.id}
-                          >
-                              <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 24 24"
-                              >
-                                  <path
-                                      d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
-                                  />
-                              </svg>
-                          </mwc-icon-button>
-                      `
-                    : ``}
-            </div>
-        `;
-    }
-
-    _renderAddDialog() {
-        const date = new Date();
-        const year = date.getFullYear();
-        const month = (date.getMonth() + 1).toString().padStart(2, "0");
-        const day = date.getDate().toString().padStart(2, "0");
-        const hours = date.getHours().toString().padStart(2, "0");
-        const minutes = date.getMinutes().toString().padStart(2, "0");
-        let val = `${year}-${month}-${day}T${hours}:${minutes}`;
-
-        return html`
-            <ha-dialog class="manage-form" heading="Add Activity for ${this._config["category"]}">
-                <form>
-                    <div class="am-add-form" >
-                        <input
-                            type="hidden"
-                            id="category"
-                            placeholder="Category"
-                            value="${this._config["category"]}" />
-
-                        <div class="form-item">
-                            <ha-textfield type="text" id="name" placeholder="Name" style="grid-column: 1 / span 2">
-                            </ha-textfield>
-                        </div>
-                        
-                        <div class="form-item">
-                            <label for="frequency-day">Frequency</label>
-                            <div class="duration-input">
-                                <ha-textfield type="number" inputmode="numeric" no-spinner label="dd" id="frequency-day" value="0"></ha-textfield>
-                                <ha-textfield type="number" inputmode="numeric" no-spinner label="hh" id="frequency-hour" value="0"></ha-textfield>
-                                <ha-textfield type="number" inputmode="numeric" no-spinner label="mm" id="frequency-minute" value="0"></ha-textfield>
-                                <ha-textfield type="number" inputmode="numeric" no-spinner label="ss"id="frequency-second" value="0"></ha-textfield>
-                            </div>
-                        </div>
-
-                        <div class="form-item">
-                            <label for="icon">Icon</label>
-                            <ha-icon-picker type="text" id="icon">
-                            </ha-icon-picker>
-                        </div>
-
-                        <div class="form-item">
-                            <label for="last-completed">Last Completed</label>
-                            <ha-textfield type="datetime-local" id="last-completed" value=${val}>
-                            </ha-textfield>
-                        </div>
-                    </div>
-                    </ha-form>
-                </form>
-                <mwc-button slot="primaryAction" dialogAction="discard" @click=${this._addActivity}>
-                    Add
-                </mwc-button>
-                <mwc-button slot="secondaryAction" dialogAction="cancel">
-                    Cancel
-                </mwc-button>
-            </ha-dialog>
         `;
     }
 
     _renderHeader() {
         return html`
-            <div class="header">
-                <div class="icon-container">
+            <div class="card-header">
+                <div class="header-icon">
                     <ha-icon icon="${this._config.icon}"></ha-icon>
                 </div>
-                <div class="info-container">
-                    <div class="primary">${this._config.header}</div>
-                </div>
-                <div class="action-container">
-                    <mwc-icon-button
-                        @click=${() => {
-                            this.shadowRoot
-                                .querySelector(".manage-form")
-                                .show();
-                        }}
-                    >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                d="M14.3 21.7C13.6 21.9 12.8 22 12 22C6.5 22 2 17.5 2 12S6.5 2 12 2C13.3 2 14.6 2.3 15.8 2.7L14.2 4.3C13.5 4.1 12.8 4 12 4C7.6 4 4 7.6 4 12S7.6 20 12 20C12.4 20 12.9 20 13.3 19.9C13.5 20.6 13.9 21.2 14.3 21.7M7.9 10.1L6.5 11.5L11 16L21 6L19.6 4.6L11 13.2L7.9 10.1M18 14V17H15V19H18V22H20V19H23V17H20V14H18Z"
-                            />
-                        </svg>
-                    </mwc-icon-button>
-                    <mwc-icon-button @click=${this._switchMode}>
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                d="M12,16A2,2 0 0,1 14,18A2,2 0 0,1 12,20A2,2 0 0,1 10,18A2,2 0 0,1 12,16M12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12A2,2 0 0,1 12,10M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4Z"
-                            />
-                        </svg>
-                    </mwc-icon-button>
+                <div class="header-title">${this._config.header}</div>
+                <div class="header-actions">
+                    ${this._panel === "view"
+                        ? html`
+                            <ha-icon-button
+                                .label=${"Manage activities"}
+                                @click=${() => this._openManage("list")}
+                            >
+                                <ha-icon icon="mdi:cog-outline"></ha-icon>
+                            </ha-icon-button>
+                        `
+                        : html`
+                            <ha-icon-button
+                                .label=${"Back"}
+                                @click=${() => this._closeManage()}
+                            >
+                                <ha-icon icon="mdi:close"></ha-icon>
+                            </ha-icon-button>
+                        `}
                 </div>
             </div>
         `;
     }
 
-    _renderUpdateDialog() {
-        const date = new Date();
-        const year = date.getFullYear();
-        const month = (date.getMonth() + 1).toString().padStart(2, "0");
-        const day = date.getDate().toString().padStart(2, "0");
-        const hours = date.getHours().toString().padStart(2, "0");
-        const minutes = date.getMinutes().toString().padStart(2, "0");
-        let val = `${year}-${month}-${day}T${hours}:${minutes}`;
+    // -----------------------------------------------------------------------
+    // View panel — activity list
+    // -----------------------------------------------------------------------
 
-        return html`
-            <ha-dialog class="confirm-update" heading="Confirm">
-                <div class="confirm-grid">
-                    <div>
-                        Yay, you did it! 🎉 If you completed this earlier, feel
-                        free to change the date and time below. Great job on
-                        completing your activity!
-                    </div>
-                    <ha-textfield
-                        type="datetime-local"
-                        id="update-last-completed"
-                        label="Activity Last Completed"
-                        value=${val}
-                    >
-                    </ha-textfield>
-                </div>
-                <mwc-button
-                    slot="primaryAction"
-                    dialogAction="discard"
-                    @click=${this._updateActivity}
-                >
-                    Update
-                </mwc-button>
-                <mwc-button slot="secondaryAction" dialogAction="cancel">
-                    Cancel
-                </mwc-button>
-            </ha-dialog>
-        `;
-    }
-
-    _renderRemoveDialog() {
-        return html`
-            <ha-dialog class="confirm-remove" heading="Confirm">
-                <div>
-                    Remove
-                    ${this._currentItem ? this._currentItem["name"] : ""}?
-                </div>
-                <mwc-button
-                    slot="primaryAction"
-                    dialogAction="discard"
-                    @click=${this._removeActivity}
-                >
-                    Remove
-                </mwc-button>
-                <mwc-button slot="secondaryAction" dialogAction="cancel">
-                    Cancel
-                </mwc-button>
-            </ha-dialog>
-        `;
-    }
-
-    _addActivity() {
-        let name = this.shadowRoot.querySelector("#name");
-        let category = this.shadowRoot.querySelector("#category");
-        let icon = this.shadowRoot.querySelector("#icon");
-        let last_completed = this.shadowRoot.querySelector("#last-completed");
-
-        let frequency = {};
-        frequency.days = utils._getNumber(
-            this.shadowRoot.querySelector("#frequency-day").value,
-            0
-        );
-        frequency.hours = utils._getNumber(
-            this.shadowRoot.querySelector("#frequency-hour").value,
-            0
-        );
-        frequency.minutes = utils._getNumber(
-            this.shadowRoot.querySelector("#frequency-minute").value,
-            0
-        );
-        frequency.seconds = utils._getNumber(
-            this.shadowRoot.querySelector("#frequency-second").value,
-            0
-        );
-
-        this._hass.callService("activity_manager", "add_activity", {
-            name: name.value,
-            category: category.value,
-            frequency: frequency,
-            icon: icon.value,
-            last_completed: last_completed.value,
-        });
-        name.value = "";
-        icon.value = "";
-
-        let manageEl = this.shadowRoot.querySelector(".manage-form");
-        manageEl.close();
-    }
-
-    _fetchData = async () => {
-        const items =
-            (await this._hass?.callWS({
-                type: "activity_manager/items",
-            })) || [];
-
-        this._activities = items
-            .map((item) => {
-                const completed = new Date(item.last_completed);
-                const due = new Date(completed.valueOf() + item.frequency_ms);
-                //const due = new Date(new Date(item.last_completed).setDate(new Date(item.last_completed).getDate() + item.frequency_ms));
-                const now = new Date();
-                const difference = due - now; // miliseconds
-
-                return {
-                    ...item,
-                    due: due,
-                    difference: difference,
-                    time_unit: "day",
-                };
-            })
-            .filter((item) => {
-                if ("category" in this._config)
-                    return (
-                        item["category"] == this._config["category"] ||
-                        item["category"] == "Activities"
-                    );
-                return true;
-            })
-            .filter((item) => {
-                if (this._config.showDueOnly) return item["difference"] < 0;
-                return true;
-            })
-            .sort((a, b) => {
-                if (a["category"] == b["category"])
-                    return a["name"]
-                        .toLowerCase()
-                        .localeCompare(b["name"].toLowerCase());
-                return a["category"]
-                    .toLowerCase()
-                    .localeCompare(b["category"].toLowerCase());
-            });
-
-        this.requestUpdate();
-    };
-
-    _showRemoveDialog(ev, item) {
-        ev.stopPropagation();
-        this._currentItem = item;
-        this.requestUpdate();
-        this.shadowRoot.querySelector(".confirm-remove").show();
-    }
-
-    _showUpdateDialog(item) {
-        this._currentItem = item;
-        this.requestUpdate();
-        this.shadowRoot.querySelector(".confirm-update").show();
-    }
-
-    _switchMode(ev) {
-        switch (this._config.mode) {
-            case "basic":
-                this._config.mode = "manage";
-                break;
-            case "manage":
-                this._config.mode = "basic";
-                break;
+    _renderList() {
+        if (this._activities.length === 0) {
+            return html`<div class="empty-state">
+                <ha-icon icon="mdi:check-all"></ha-icon>
+                <span>No activities</span>
+            </div>`;
         }
-        this.requestUpdate();
+        return html`
+            <div class="activity-list">
+                ${repeat(this._activities, (a) => a.id, (a) => this._renderActivityRow(a))}
+            </div>
+        `;
     }
 
-    _updateActivity() {
-        if (this._currentItem == null) return;
+    _renderActivityRow(activity) {
+        const compact = this._config.compact;
+        const frac = progressFraction(activity);
+        const R = compact ? 14 : 18;
+        const stroke = compact ? 2 : 2.5;
+        const size = (R + stroke) * 2;
+        const cx = size / 2;
+        return html`
+            <div class="activity-row status-${activity._status} ${compact ? "compact" : ""}"
+                 @click=${() => this._showDoneDialog(activity)}>
+                <div class="activity-icon-wrap status-bg-${activity._status} ${compact ? "compact" : ""}">
+                    <svg class="progress-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                        <circle
+                            class="progress-ring-track"
+                            cx="${cx}" cy="${cx}" r="${R}"
+                            fill="none" stroke-width="${stroke}"
+                        />
+                        <path
+                            class="progress-ring-arc status-arc-${activity._status}"
+                            d="${arcPath(R, frac)}"
+                            fill="none" stroke-width="${stroke}"
+                            transform="translate(${stroke}, ${stroke})"
+                        />
+                    </svg>
+                    <ha-icon icon="${activity.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
+                </div>
+                <div class="activity-info">
+                    <span class="activity-name">${activity.name}</span>
+                    ${compact ? "" : html`<span class="activity-sub">${activity.category} · ${formatRelative(activity.due)}</span>`}
+                </div>
+                ${compact ? html`<span class="activity-due-compact">${formatRelative(activity.due)}</span>` : ""}
+            </div>
+        `;
+    }
 
-        let last_completed = this.shadowRoot.querySelector(
-            "#update-last-completed"
-        );
+    _showDoneDialog(activity) {
+        this._confirming = activity;
+    }
+
+    // -----------------------------------------------------------------------
+    // Mark-done confirm dialog
+    // -----------------------------------------------------------------------
+
+    _renderConfirmDialog() {
+        const a = this._confirming;
+        const now = localDatetimeValue();
+        return html`
+            <div class="form-panel">
+                <div class="form-hero">
+                    <div class="form-hero-icon">
+                        <ha-icon icon="${a.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
+                    </div>
+                    <div class="form-hero-text">
+                        <div class="form-hero-name">${a.name}</div>
+                        <div class="form-hero-label">Mark as completed</div>
+                    </div>
+                </div>
+                <ha-textfield
+                    id="confirm-dt"
+                    type="datetime-local"
+                    label="Completed at"
+                    .value=${now}
+                    style="width:100%"
+                ></ha-textfield>
+                <div class="form-actions">
+                    <button class="am-btn am-btn-text" @click=${() => { this._confirming = null; }}>Cancel</button>
+                    <button class="am-btn am-btn-primary" @click=${this._submitDone}>Mark Done</button>
+                </div>
+            </div>
+        `;
+    }
+
+    async _submitDone() {
+        const a = this._confirming;
+        if (!a) return;
+        const dtEl = this.shadowRoot.querySelector("#confirm-dt");
+        const last_completed = datetimeLocalToISO(dtEl?.value);
+        this._confirming = null;
+        try {
+            await this._hass.callWS({
+                type: "activity_manager/update",
+                entry_id: a.entry_id,
+                item_id: a.id,
+                last_completed,
+            });
+        } catch (err) {
+            console.error("[ActivityManagerCard] Failed to mark done:", err);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Manage panel
+    // -----------------------------------------------------------------------
+
+    _openManage(view, activity = null) {
+        this._panel = "manage";
+        this._manageView = view;
+        this._editing = activity ? { ...activity } : null;
+    }
+
+    _closeManage() {
+        this._panel = "view";
+        this._editing = null;
+        this._manageView = "list";
+    }
+
+    _renderManagePanel() {
+        if (this._manageView === "add") return this._renderAddForm();
+        if (this._manageView === "edit") return this._renderEditForm();
+        if (this._manageView === "delete") return this._renderDeleteConfirm();
+        return this._renderManageList();
+    }
+
+    _renderManageList() {
+        return html`
+            <div class="manage-list">
+                <button class="add-btn" @click=${() => this._openManage("add")}>
+                    <ha-icon icon="mdi:plus-circle-outline"></ha-icon>
+                    Add activity
+                </button>
+                ${this._activities.length === 0
+                    ? html`<div class="empty-state"><span>No activities yet — add one above.</span></div>`
+                    : html`
+                        <div class="activity-list">
+                            ${repeat(this._activities, (a) => a.id, (a) => html`
+                                <div class="activity-row status-${a._status}">
+                                    <div class="activity-icon-wrap status-bg-${a._status}">
+                                        <ha-icon icon="${a.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
+                                    </div>
+                                    <div class="activity-info">
+                                        <span class="activity-name">${a.name}</span>
+                                        <span class="activity-sub">${a.category}</span>
+                                    </div>
+                                    <div class="manage-actions">
+                                        <ha-icon-button
+                                            .label=${"Edit"}
+                                            @click=${() => this._openManage("edit", a)}
+                                        ><ha-icon icon="mdi:pencil-outline"></ha-icon></ha-icon-button>
+                                        <ha-icon-button
+                                            .label=${"Delete"}
+                                            class="delete-btn-icon"
+                                            @click=${() => this._openManage("delete", a)}
+                                        ><ha-icon icon="mdi:trash-can-outline"></ha-icon></ha-icon-button>
+                                    </div>
+                                </div>
+                            `)}
+                        </div>
+                    `}
+            </div>
+        `;
+    }
+
+    // -----------------------------------------------------------------------
+    // Add form
+    // -----------------------------------------------------------------------
+
+    _renderAddForm() {
+        const now = localDatetimeValue();
+        return html`
+            <div class="form-panel">
+                <div class="form-hero">
+                    <div class="form-hero-icon">
+                        <ha-icon icon="mdi:plus-circle-outline"></ha-icon>
+                    </div>
+                    <div class="form-hero-text">
+                        <div class="form-hero-name">New activity</div>
+                        <div class="form-hero-label">Add to this list</div>
+                    </div>
+                </div>
+                <div class="form-fields">
+                    <ha-textfield id="add-name" label="Name" style="width:100%"></ha-textfield>
+                    <ha-textfield id="add-category" label="Category" .value=${this._config.category || ""} style="width:100%" autocomplete="off"></ha-textfield>
+                    <ha-icon-picker id="add-icon" label="Icon" style="width:100%"></ha-icon-picker>
+                    <div class="field-group">
+                        <label class="field-label">Frequency</label>
+                        <div class="duration-row">
+                            <ha-textfield id="add-freq-d" label="days"  type="number" inputmode="numeric" no-spinner value="0"></ha-textfield>
+                            <ha-textfield id="add-freq-h" label="hours" type="number" inputmode="numeric" no-spinner value="0"></ha-textfield>
+                            <ha-textfield id="add-freq-m" label="min"   type="number" inputmode="numeric" no-spinner value="0"></ha-textfield>
+                        </div>
+                    </div>
+                    <ha-textfield id="add-last" type="datetime-local" label="Last completed" .value=${now} style="width:100%"></ha-textfield>
+                </div>
+                <div class="form-actions">
+                    <button class="am-btn am-btn-text" @click=${() => this._closeManage()}>Cancel</button>
+                    <button class="am-btn am-btn-primary" @click=${this._submitAdd}>Add</button>
+                </div>
+            </div>
+        `;
+    }
+
+    _readFreq(prefix) {
+        return {
+            days: getNumber(this.shadowRoot.querySelector(`#${prefix}-freq-d`).value),
+            hours: getNumber(this.shadowRoot.querySelector(`#${prefix}-freq-h`).value),
+            minutes: getNumber(this.shadowRoot.querySelector(`#${prefix}-freq-m`).value),
+        };
+    }
+
+    _freqMs(freq) {
+        return freq.days * 86_400_000 + freq.hours * 3_600_000 + freq.minutes * 60_000;
+    }
+
+    _submitAdd() {
+        const name = this.shadowRoot.querySelector("#add-name");
+        const category = this.shadowRoot.querySelector("#add-category");
+        const icon = this.shadowRoot.querySelector("#add-icon");
+        const lastEl = this.shadowRoot.querySelector("#add-last");
+        const freq = this._readFreq("add");
+
+        if (!name.value.trim()) {
+            name.setCustomValidity("Required");
+            name.reportValidity();
+            return;
+        }
+        if (this._freqMs(freq) === 0) {
+            alert("Frequency must be greater than zero.");
+            return;
+        }
+        if (!this._config.entry_id) {
+            alert("No activity list selected. Edit the card configuration and choose a list.");
+            return;
+        }
+
+        this._hass.callWS({
+            type: "activity_manager/add",
+            entry_id: this._config.entry_id,
+            name: name.value.trim(),
+            category: category.value.trim(),
+            frequency: freq,
+            icon: icon.value || undefined,
+            last_completed: datetimeLocalToISO(lastEl.value),
+        }).catch((err) => console.error("[ActivityManagerCard] Failed to add activity:", err));
+
+        this._closeManage();
+    }
+
+    // -----------------------------------------------------------------------
+    // Edit form
+    // -----------------------------------------------------------------------
+
+    _renderEditForm() {
+        const a = this._editing;
+        if (!a) return html``;
+        const lastVal = a.last_completed
+            ? localDatetimeValue(new Date(a.last_completed))
+            : localDatetimeValue();
+        const freq = typeof a.frequency === "object" ? a.frequency : {};
+        return html`
+            <div class="form-panel">
+                <div class="form-hero">
+                    <div class="form-hero-icon">
+                        <ha-icon icon="${a.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
+                    </div>
+                    <div class="form-hero-text">
+                        <div class="form-hero-name">${a.name}</div>
+                        <div class="form-hero-label">Edit activity</div>
+                    </div>
+                </div>
+                <div class="form-fields">
+                    <ha-textfield id="edit-name" label="Name" value=${a.name} style="width:100%"></ha-textfield>
+                    <ha-textfield id="edit-category" label="Category" .value=${a.category || ""} style="width:100%" autocomplete="off"></ha-textfield>
+                    <ha-icon-picker id="edit-icon" label="Icon" .value=${a.icon || ""} style="width:100%"></ha-icon-picker>
+                    <div class="field-group">
+                        <label class="field-label">Frequency</label>
+                        <div class="duration-row">
+                            <ha-textfield id="edit-freq-d" label="days"  type="number" inputmode="numeric" no-spinner value=${String(freq.days || 0)}></ha-textfield>
+                            <ha-textfield id="edit-freq-h" label="hours" type="number" inputmode="numeric" no-spinner value=${String(freq.hours || 0)}></ha-textfield>
+                            <ha-textfield id="edit-freq-m" label="min"   type="number" inputmode="numeric" no-spinner value=${String(freq.minutes || 0)}></ha-textfield>
+                        </div>
+                    </div>
+                    <ha-textfield id="edit-last" type="datetime-local" label="Last completed" value=${lastVal} style="width:100%"></ha-textfield>
+                </div>
+                <div class="form-actions">
+                    <button class="am-btn am-btn-text" @click=${() => this._closeManage()}>Cancel</button>
+                    <button class="am-btn am-btn-primary" @click=${this._submitEdit}>Save</button>
+                </div>
+            </div>
+        `;
+    }
+
+    _submitEdit() {
+        const a = this._editing;
+        if (!a) return;
+        const name = this.shadowRoot.querySelector("#edit-name");
+        const category = this.shadowRoot.querySelector("#edit-category");
+        const icon = this.shadowRoot.querySelector("#edit-icon");
+        const lastEl = this.shadowRoot.querySelector("#edit-last");
+        const freq = this._readFreq("edit");
+
+        if (!name.value.trim()) {
+            name.setCustomValidity("Required");
+            name.reportValidity();
+            return;
+        }
+        if (this._freqMs(freq) === 0) {
+            alert("Frequency must be greater than zero.");
+            return;
+        }
 
         this._hass.callWS({
             type: "activity_manager/update",
-            item_id: this._currentItem["id"],
-            last_completed: last_completed.value,
-        });
+            entry_id: a.entry_id,
+            item_id: a.id,
+            name: name.value.trim(),
+            category: category.value.trim() || a.category,
+            frequency: freq,
+            icon: icon.value || undefined,
+            last_completed: datetimeLocalToISO(lastEl.value),
+        }).catch((err) => console.error("[ActivityManagerCard] Failed to update activity:", err));
+
+        this._closeManage();
     }
 
-    _removeActivity() {
-        if (this._currentItem == null) return;
+    // -----------------------------------------------------------------------
+    // Delete confirm
+    // -----------------------------------------------------------------------
 
+    _renderDeleteConfirm() {
+        const a = this._editing;
+        if (!a) return html``;
+        return html`
+            <div class="form-panel">
+                <div class="form-hero form-hero-danger">
+                    <div class="form-hero-icon form-hero-icon-danger">
+                        <ha-icon icon="${a.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
+                    </div>
+                    <div class="form-hero-text">
+                        <div class="form-hero-name">${a.name}</div>
+                        <div class="form-hero-label form-hero-label-danger">Remove activity?</div>
+                    </div>
+                </div>
+                <p class="delete-body">This will be permanently removed from <em>${a.list_title || "this list"}</em>.</p>
+                <div class="form-actions">
+                    <button class="am-btn am-btn-text" @click=${() => this._closeManage()}>Cancel</button>
+                    <button class="am-btn am-btn-danger" @click=${this._submitDelete}>Remove</button>
+                </div>
+            </div>
+        `;
+    }
+
+    _submitDelete() {
+        const a = this._editing;
+        if (!a) return;
         this._hass.callWS({
             type: "activity_manager/remove",
-            item_id: this._currentItem["id"],
-        });
+            entry_id: a.entry_id,
+            item_id: a.id,
+        }).catch((err) => console.error("[ActivityManagerCard] Failed to remove activity:", err));
+        this._closeManage();
     }
+
+    // -----------------------------------------------------------------------
+    // Styles
+    // -----------------------------------------------------------------------
 
     static styles = css`
         :host {
-            --am-item-primary-color: #ffffff;
-            --am-item-background-color: #00000000;
-            --am-item-due-primary-color: #ff4a4a;
-            --am-item-due-background-color: #ff4a4a14;
-            --am-item-due-soon-primary-color: #ffffff;
-            --am-item-due-soon-background-color: #00000020;
-            --am-item-primary-font-size: 14px;
-            --am-item-secondary-font-size: 12px;
-            --mdc-theme-primary: var(--primary-text-color);
+            --am-ok-color: var(--state-inactive-color, #9e9e9e);
+            --am-soon-color: var(--warning-color, #ff9800);
+            --am-overdue-color: var(--error-color, #db4437);
+            --am-icon-size: 36px;
+            --am-row-gap: 8px;
         }
-        .content {
-            padding: 0 12px 12px 12px;
+
+        ha-card {
+            overflow: hidden;
         }
-        .am-add-form {
-            padding-top: 10px;
-            display: grid;
-            align-items: center;
-            gap: 24px;
-        }
-        .am-add-button {
-            padding-top: 10px;
-        }
-        .duration-input {
+
+        /* ---- Header ---- */
+        .card-header {
             display: flex;
-            flex-direction: row;
             align-items: center;
+            gap: 10px;
+            padding: 0 4px 0 12px;
+            height: 56px;
         }
-        .header {
-            display: grid;
-            grid-template-columns: 52px auto min-content;
+        .header-icon {
+            display: flex;
             align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(var(--rgb-primary-color, 33,150,243), 0.12);
+            color: var(--primary-color);
+            flex-shrink: 0;
+            --mdc-icon-size: 20px;
+        }
+        .header-icon ha-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+        }
+        .header-title {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--primary-text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .header-actions ha-icon-button {
+            color: var(--secondary-text-color);
+            --mdc-icon-button-size: 36px;
+            --mdc-icon-size: 20px;
+        }
+
+        /* ---- Card content ---- */
+        .card-content {
             padding: 12px;
         }
-        .icon-container {
-            display: flex;
-            height: 40px;
-            width: 40px;
-            border-radius: 50%;
-            background: rgba(111, 111, 111, 0.2);
-            place-content: center;
-            align-items: center;
-            margin-right: 12px;
-        }
-        .info-container {
+
+        /* ---- Activity rows (shared between view + manage list) ---- */
+        .activity-list {
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            gap: var(--am-row-gap);
         }
-        .primary {
-            font-weight: bold;
+
+        .activity-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: var(--secondary-background-color, rgba(0,0,0,.04));
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
         }
-        .action-container {
+        .activity-row:hover {
+            background: var(--secondary-background-color, rgba(0,0,0,.04));
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.18);
+        }
+        .activity-row:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        .activity-row.status-overdue {
+            background: rgba(var(--rgb-error-color, 219,68,55), 0.08);
+        }
+        .activity-row.status-soon {
+            background: rgba(var(--rgb-warning-color, 255,152,0), 0.08);
+        }
+
+        .activity-icon-wrap {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
+            width: var(--am-icon-size);
+            height: var(--am-icon-size);
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: rgba(var(--rgb-disabled-color, 189,189,189), 0.2);
+            color: var(--am-ok-color);
+            --mdc-icon-size: 20px;
         }
-        .am-grid {
-            display: grid;
+        .activity-icon-wrap.compact {
+            width: 28px;
+            height: 28px;
+            --mdc-icon-size: 16px;
+        }
+        .activity-icon-wrap.status-bg-overdue {
+            background: rgba(var(--rgb-error-color, 219,68,55), 0.15);
+            color: var(--am-overdue-color);
+        }
+        .activity-icon-wrap.status-bg-soon {
+            background: rgba(var(--rgb-warning-color, 255,152,0), 0.15);
+            color: var(--am-soon-color);
+        }
+
+        /* ---- Progress ring ---- */
+        .progress-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            overflow: visible;
+            pointer-events: none;
+        }
+        .progress-ring-track {
+            stroke: rgba(var(--rgb-disabled-color, 189,189,189), 0.25);
+        }
+        .progress-ring-arc {
+            stroke: var(--am-ok-color);
+            stroke-linecap: round;
+            transition: stroke-dasharray 0.3s ease;
+        }
+        .progress-ring-arc.status-arc-soon {
+            stroke: var(--am-soon-color);
+        }
+        .progress-ring-arc.status-arc-overdue {
+            stroke: var(--am-overdue-color);
+        }
+
+        /* ---- Compact mode ---- */
+        .activity-row.compact {
+            padding: 6px 10px;
+        }
+        .activity-due-compact {
+            font-size: 11px;
+            color: var(--secondary-text-color);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .activity-row.compact.status-overdue .activity-due-compact {
+            color: var(--am-overdue-color);
+            font-weight: 500;
+        }
+        .activity-row.compact.status-soon .activity-due-compact {
+            color: var(--am-soon-color);
+        }
+
+        .activity-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .activity-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--primary-text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .activity-sub {
+            font-size: 12px;
+            color: var(--secondary-text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .activity-row.status-overdue .activity-sub {
+            color: var(--am-overdue-color);
+            font-weight: 500;
+        }
+        .activity-row.status-soon .activity-sub {
+            color: var(--am-soon-color);
+        }
+
+
+        /* ---- Empty state ---- */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding: 24px 0;
+            color: var(--secondary-text-color);
+            font-size: 14px;
+        }
+        .empty-state ha-icon {
+            --mdc-icon-size: 32px;
+            opacity: 0.4;
+        }
+
+        /* ---- Manage panel ---- */
+        .manage-list {
+            display: flex;
+            flex-direction: column;
             gap: 12px;
         }
 
-        .am-item {
-            position: relative;
-            display: inline-block;
+        .add-btn {
             display: flex;
-            #color: var(--am-item-primary-color, #ffffff);
-            #background-color: var(--am-item-background-color, #000000ff);
-            border-radius: 8px;
             align-items: center;
-            padding: 12px;
+            gap: 8px;
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px dashed var(--divider-color, rgba(0,0,0,.18));
+            border-radius: 10px;
+            background: transparent;
+            color: var(--primary-color);
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
             cursor: pointer;
+            transition: background 0.15s;
+        }
+        .add-btn:hover {
+            background: rgba(var(--rgb-primary-color, 33,150,243), 0.06);
+        }
+        .add-btn ha-icon {
+            --mdc-icon-size: 20px;
         }
 
-        .am-icon {
-            display: block;
+        .manage-actions {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .delete-btn-icon {
+            color: var(--error-color, #db4437);
+        }
+
+        /* ---- Danger hero variants ---- */
+        .form-hero-icon-danger {
+            background: rgba(var(--rgb-error-color, 219,68,55), 0.12);
+            color: var(--error-color, #db4437);
+        }
+        .form-hero-label-danger {
+            color: var(--error-color, #db4437);
+        }
+
+        .form-fields {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .field-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--secondary-text-color);
+            margin-bottom: 4px;
+        }
+
+
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+        }
+
+        .duration-row {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+        }
+        .duration-row ha-textfield {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding-top: 4px;
+        }
+
+        /* ---- Mark Done panel ---- */
+        .form-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .form-hero {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 4px 0 8px;
+            border-bottom: 1px solid var(--divider-color, rgba(0,0,0,.12));
+        }
+        .form-hero-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
             border-radius: 50%;
-            background-color: #333;
-            padding: 5px;
-            margin-right: 12px;
+            flex-shrink: 0;
+            background: rgba(var(--rgb-primary-color, 33,150,243), 0.12);
+            color: var(--primary-color);
             --mdc-icon-size: 24px;
         }
-
-        .am-item-name {
-            flex: 1 1 auto;
+        .form-hero-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .form-hero-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--primary-text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .form-hero-label {
+            font-size: 12px;
+            color: var(--secondary-text-color);
         }
 
-        .am-item-primary {
-            font-size: var(--am-item-primary-font-size, 14px);
-            font-weight: bold;
+        .delete-body {
+            font-size: 14px;
+            color: var(--primary-text-color);
+            margin: 0;
+            line-height: 1.5;
         }
 
-        .am-item-secondary {
-            font-size: var(--am-item-secondary-font-size, 12px);
-        }
-
-        .am-action {
-            display: grid;
-            grid-template-columns: auto auto;
+        .am-btn {
+            display: inline-flex;
             align-items: center;
+            justify-content: center;
+            height: 36px;
+            padding: 0 16px;
+            border-radius: 18px;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s, opacity 0.15s;
+            white-space: nowrap;
         }
-
-        .am-due-soon {
-            color: var(--am-item-due-soon-primary-color, #ffffff);
-            background-color: var(
-                --am-item-due-soon-background-color,
-                #00000014
-            );
-            --mdc-theme-primary: var(--am-item-due-soon-primary-color);
+        .am-btn-text {
+            background: transparent;
+            color: var(--primary-color);
         }
-
-        .am-due {
-            color: var(--am-item-due-primary-color, #ffffff);
-            background-color: var(--am-item-due-background-color, #00000014);
-            --mdc-theme-primary: var(--am-item-due-primary-color);
+        .am-btn-text:hover {
+            background: rgba(var(--rgb-primary-color, 33,150,243), 0.08);
         }
-
-        .form-item {
-            display: grid;
-            grid-template-columns: 1fr 1.8fr;
-            align-items: center;
-            --mdc-shape-small: 0px;
+        .am-btn-primary {
+            background: var(--primary-color);
+            color: var(--text-primary-color, #fff);
         }
-
-        .form-item input::-webkit-outer-spin-button,
-        .form-item input::-webkit-inner-spin-button {
-            -webkit-appearance: none;
+        .am-btn-primary:hover {
+            opacity: 0.88;
         }
-
-        .confirm-grid {
-            display: grid;
-            gap: 12px;
+        .am-btn-danger {
+            background: var(--error-color, #db4437);
+            color: #fff;
+        }
+        .am-btn-danger:hover {
+            opacity: 0.88;
         }
     `;
 }
 
-class ActivityManagerCardEditor extends LitElement {
-    _categories = [];
+// ---------------------------------------------------------------------------
+// Card editor
+// ---------------------------------------------------------------------------
 
+class ActivityManagerCardEditor extends LitElement {
     static get properties() {
         return {
-            hass: {},
-            _config: {},
+            _hass: { attribute: false },
+            _config: { attribute: false },
+            _lists: { attribute: false },
         };
+    }
+
+    constructor() {
+        super();
+        this._lists = null;
     }
 
     setConfig(config) {
@@ -617,127 +1025,187 @@ class ActivityManagerCardEditor extends LitElement {
     }
 
     set hass(hass) {
+        const first = !this._hass;
         this._hass = hass;
+        if (first) this._loadLists();
+    }
 
-        Object.keys(this._hass["states"]).forEach((key) => {
-            let entity = this._hass["states"][key];
-            if ("attributes" in entity) {
-                if ("integration" in entity.attributes) {
-                    if (entity.attributes.integration == "activity_manager") {
-                        if (
-                            !this._categories.some(
-                                (item) =>
-                                    item.label === entity.attributes.category
-                            )
-                        ) {
-                            this._categories.push({
-                                label: entity.attributes.category,
-                                value: entity.attributes.category,
-                            });
-                        }
-                    }
-                }
-            }
+    async _loadLists() {
+        try {
+            const entries = await this._hass.callWS({
+                type: "config_entries/get",
+                domain: "activity_manager",
+            });
+            this._lists = entries.map((e) => ({ value: e.entry_id, label: e.title }));
+            this.requestUpdate();
+        } catch (_) {
+            // fallback to entity scan if WS call fails
+            this._lists = null;
+        }
+    }
+
+    _getLists() {
+        if (!this._hass) return [];
+        // Primary: use config entries fetched via WS (works with empty lists).
+        if (this._lists) return this._lists;
+        // Fallback: scan entity states (populated once activities have been added).
+        const lists = {};
+        Object.values(this._hass.states).forEach((e) => {
+            const a = e.attributes;
+            if (a.integration === "activity_manager" && a.entry_id)
+                lists[a.entry_id] = a.list_title || a.entry_id;
         });
+        return Object.entries(lists).map(([value, label]) => ({ value, label }));
+    }
+
+    _getCategories() {
+        if (!this._hass) return [];
+        const target = this._config?.entry_id;
+        const seen = new Set();
+        Object.values(this._hass.states).forEach((e) => {
+            const a = e.attributes;
+            if (a.integration !== "activity_manager") return;
+            if (target && a.entry_id !== target) return;
+            if (a.category) seen.add(a.category);
+        });
+        return Array.from(seen).sort().map((c) => ({ value: c, label: c }));
     }
 
     _valueChanged(ev) {
-        if (!this._config || !this._hass) {
-            return;
-        }
-        const _config = Object.assign({}, this._config);
-        _config.category = ev.detail.value.category;
-        _config.soonHours = ev.detail.value.soonHours;
-        _config.showDueOnly = ev.detail.value.showDueOnly;
-        _config.icon = ev.detail.value.icon;
-        this._config = _config;
-
-        const event = new CustomEvent("config-changed", {
-            detail: { config: _config },
+        if (!this._config || !this._hass) return;
+        const v = ev.detail.value;
+        const config = {
+            ...this._config,
+            entry_id: v.entry_id || null,
+            category: v.category || null,
+            header: v.header,
+            icon: v.icon,
+            showDueOnly: v.showDueOnly,
+            compact: v.compact,
+            soonHours: v.soonHours,
+        };
+        this._config = config;
+        this.dispatchEvent(new CustomEvent("config-changed", {
+            detail: { config },
             bubbles: true,
             composed: true,
-        });
-        this.dispatchEvent(event);
+        }));
     }
 
     render() {
-        if (!this._hass || !this._config) {
-            return html``;
-        }
+        if (!this._hass || !this._config) return html``;
+        const lists = this._getLists();
+        const categories = this._getCategories();
+
         return html`
-            <ha-form
-                .hass=${this._hass}
-                .data=${this._config}
-                .schema=${[
-                    {
-                        name: "category",
-                        selector: {
-                            select: {
-                                options: this._categories,
-                                custom_value: true,
-                            },
+            <div class="editor">
+                <div class="editor-row">
+                    <label>Activity list</label>
+                    <select class="editor-select" .value=${this._config.entry_id ?? ""} @change=${this._listChanged}>
+                        <option value="" ?selected=${!this._config.entry_id}>— choose a list —</option>
+                        ${lists.map((l) => html`
+                            <option value=${l.value} ?selected=${this._config.entry_id === l.value}>${l.label}</option>
+                        `)}
+                    </select>
+                    ${lists.length === 0 ? html`<span class="editor-hint">No lists found. Add an Activity Manager integration first.</span>` : html``}
+                </div>
+                <ha-form
+                    .hass=${this._hass}
+                    .data=${this._config}
+                    .schema=${[
+                        {
+                            name: "category",
+                            selector: { select: { options: categories, custom_value: true } },
                         },
-                    },
-                    { name: "icon", selector: { icon: {} } },
-                    { name: "showDueOnly", selector: { boolean: {} } },
-                    {
-                        name: "soonHours",
-                        selector: { number: { unit_of_measurement: "hours" } },
-                    },
-                ]}
-                .computeLabel=${this._computeLabel}
-                @value-changed=${this._valueChanged}
-            ></ha-form>
+                        { name: "header", selector: { text: {} } },
+                        { name: "icon", selector: { icon: {} } },
+                        { name: "showDueOnly", selector: { boolean: {} } },
+                        { name: "compact", selector: { boolean: {} } },
+                        { name: "soonHours", selector: { number: { unit_of_measurement: "hours", min: 0 } } },
+                    ]}
+                    .computeLabel=${(s) => ({
+                        category: "Filter by category (optional)",
+                        header: "Card title",
+                        icon: "Card icon",
+                        showDueOnly: "Only show overdue/due-soon activities",
+                        compact: "Compact mode (smaller rows)",
+                        soonHours: "\"Due soon\" threshold",
+                    }[s.name] ?? s.name)}
+                    @value-changed=${this._valueChanged}
+                ></ha-form>
+            </div>
         `;
     }
 
-    _computeLabel(schema) {
-        var labelMap = {
-            category: "Category",
-            icon: "Icon",
-            showDueOnly: "Only show activities that are due",
-            soonHours: "Soon to be due (styles the activity)",
-            mode: "Manage mode",
-        };
-        return labelMap[schema.name];
+    _listChanged(ev) {
+        const entry_id = ev.target.value || null;
+        const config = { ...this._config, entry_id };
+        this._config = config;
+        this.dispatchEvent(new CustomEvent("config-changed", {
+            detail: { config },
+            bubbles: true,
+            composed: true,
+        }));
     }
+
+    static styles = css`
+        .editor {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .editor-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 8px 0;
+        }
+        .editor-row label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--secondary-text-color);
+        }
+        .editor-select {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--divider-color, rgba(0,0,0,.2));
+            background: var(--card-background-color, #fff);
+            color: var(--primary-text-color);
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .editor-hint {
+            font-size: 12px;
+            color: var(--warning-color, #ff9800);
+        }
+    `;
 }
 
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 customElements.define("activity-manager-card", ActivityManagerCard);
-customElements.define(
-    "activity-manager-card-editor",
-    ActivityManagerCardEditor
-);
+customElements.define("activity-manager-card-editor", ActivityManagerCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
     type: "activity-manager-card",
-    name: "Activity Manager Card",
-    preview: true, // Optional - defaults to false
+    name: "Activity Manager",
+    description: "Track recurring activities with due-date awareness.",
+    preview: true,
 });
 
-export const loadHaForm = async () => {
-    if (
-        customElements.get("ha-checkbox") &&
-        customElements.get("ha-slider") &&
-        customElements.get("ha-combo-box")
-    )
-        return;
-
+// Lazily load ha-form and ha-icon-picker (needed for editor + forms)
+async function loadHaComponents() {
+    if (customElements.get("ha-form") && customElements.get("ha-icon-picker")) return;
     await customElements.whenDefined("partial-panel-resolver");
     const ppr = document.createElement("partial-panel-resolver");
-    ppr.hass = {
-        panels: [
-            {
-                url_path: "tmp",
-                component_name: "config",
-            },
-        ],
-    };
+    ppr.hass = { panels: [{ url_path: "tmp", component_name: "config" }] };
     ppr._updateRoutes();
     await ppr.routerOptions.routes.tmp.load();
-
     await customElements.whenDefined("ha-panel-config");
     const cpr = document.createElement("ha-panel-config");
     await cpr.routerOptions.routes.automation.load();
-};
+}
