@@ -102,7 +102,7 @@ class ActivityManagerCard extends LitElement {
     }
 
     firstUpdated() {
-        loadHaComponents();
+        loadHaComponents().then(() => this.requestUpdate());
     }
 
     disconnectedCallback() {
@@ -342,23 +342,14 @@ class ActivityManagerCard extends LitElement {
     // -----------------------------------------------------------------------
 
     _renderCategoryField(id, value) {
-        const categories = [...new Set(this._activities.map(a => a.category).filter(Boolean))].sort();
-        const listId = `${id}-list`;
         return html`
-            <div class="cat-field-wrap">
-                <label class="cat-field-label">Category</label>
-                <input
-                    id="${id}"
-                    class="cat-field-input"
-                    list="${listId}"
-                    .value=${value}
-                    placeholder=" "
-                    autocomplete="off"
-                />
-                <datalist id="${listId}">
-                    ${categories.map(c => html`<option value="${c}"></option>`)}
-                </datalist>
-            </div>
+            <ha-textfield
+                id="${id}"
+                label="Category"
+                .value=${value}
+                style="width:100%"
+                autocomplete="off"
+            ></ha-textfield>
         `;
     }
 
@@ -459,18 +450,18 @@ class ActivityManagerCard extends LitElement {
                     </div>
                 </div>
                 <div class="form-fields">
-                    <ha-textfield id="edit-name" label="Name" .value=${a.name} style="width:100%"></ha-textfield>
+                    <ha-textfield id="edit-name" label="Name" value=${a.name} style="width:100%"></ha-textfield>
                     ${this._renderCategoryField("edit-category", a.category || "")}
                     <ha-icon-picker id="edit-icon" label="Icon" .value=${a.icon || ""} style="width:100%"></ha-icon-picker>
                     <div class="field-group">
                         <label class="field-label">Frequency</label>
                         <div class="duration-row">
-                            <ha-textfield id="edit-freq-d" label="days"  type="number" inputmode="numeric" no-spinner .value=${String(freq.days || 0)}></ha-textfield>
-                            <ha-textfield id="edit-freq-h" label="hours" type="number" inputmode="numeric" no-spinner .value=${String(freq.hours || 0)}></ha-textfield>
-                            <ha-textfield id="edit-freq-m" label="min"   type="number" inputmode="numeric" no-spinner .value=${String(freq.minutes || 0)}></ha-textfield>
+                            <ha-textfield id="edit-freq-d" label="days"  type="number" inputmode="numeric" no-spinner value=${String(freq.days || 0)}></ha-textfield>
+                            <ha-textfield id="edit-freq-h" label="hours" type="number" inputmode="numeric" no-spinner value=${String(freq.hours || 0)}></ha-textfield>
+                            <ha-textfield id="edit-freq-m" label="min"   type="number" inputmode="numeric" no-spinner value=${String(freq.minutes || 0)}></ha-textfield>
                         </div>
                     </div>
-                    <ha-textfield id="edit-last" type="datetime-local" label="Last completed" .value=${lastVal} style="width:100%"></ha-textfield>
+                    <ha-textfield id="edit-last" type="datetime-local" label="Last completed" value=${lastVal} style="width:100%"></ha-textfield>
                 </div>
                 <div class="form-actions">
                     <button class="am-btn am-btn-text" @click=${() => this._openManage("list")}>Cancel</button>
@@ -789,39 +780,6 @@ class ActivityManagerCard extends LitElement {
             margin-bottom: 4px;
         }
 
-        /* ---- Category combobox ---- */
-        .cat-field-wrap {
-            position: relative;
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .cat-field-label {
-            position: absolute;
-            top: 8px;
-            left: 16px;
-            font-size: 12px;
-            color: var(--secondary-text-color);
-            pointer-events: none;
-            transition: none;
-        }
-        .cat-field-input {
-            width: 100%;
-            box-sizing: border-box;
-            height: 56px;
-            padding: 24px 16px 8px;
-            background: var(--input-fill-color, rgba(var(--rgb-primary-text-color,0,0,0),0.06));
-            border: none;
-            border-bottom: 1px solid var(--input-ink-color, var(--secondary-text-color));
-            border-radius: 4px 4px 0 0;
-            font-size: 16px;
-            font-family: inherit;
-            color: var(--primary-text-color);
-            outline: none;
-            -webkit-appearance: none;
-        }
-        .cat-field-input:focus {
-            border-bottom: 2px solid var(--primary-color);
-        }
 
         .field-group {
             display: flex;
