@@ -88,6 +88,7 @@ class ActivityManagerCard extends LitElement {
         this._manageView = "list";
         this._confirming = null;
         this._unsubEvents = null;
+        this._disconnected = false;
     }
 
     setConfig(config) {
@@ -105,8 +106,14 @@ class ActivityManagerCard extends LitElement {
         loadHaComponents().then(() => this.requestUpdate());
     }
 
+    connectedCallback() {
+        super.connectedCallback();
+        this._disconnected = false;
+    }
+
     disconnectedCallback() {
         super.disconnectedCallback();
+        this._disconnected = true;
         this._unsubEvents?.();
         this._unsubEvents = null;
     }
@@ -118,7 +125,14 @@ class ActivityManagerCard extends LitElement {
             this._fetchData();
             hass.connection
                 .subscribeEvents(() => this._fetchData(), "activity_manager_updated")
-                .then((unsub) => { this._unsubEvents = unsub; });
+                .then((unsub) => {
+                    if (this._disconnected) {
+                        unsub();
+                    } else {
+                        this._unsubEvents = unsub;
+                    }
+                })
+                .catch((err) => console.error("[ActivityManagerCard] Failed to subscribe to events:", err));
         }
     }
 
@@ -130,7 +144,13 @@ class ActivityManagerCard extends LitElement {
         if (!this._hass) return;
         const msg = { type: "activity_manager/items" };
         if (this._config.entry_id) msg.entry_id = this._config.entry_id;
-        const raw = (await this._hass.callWS(msg)) || [];
+        let raw;
+        try {
+            raw = (await this._hass.callWS(msg)) || [];
+        } catch (err) {
+            console.error("[ActivityManagerCard] Failed to fetch activities:", err);
+            return;
+        }
         const soonMs = (this._config.soonHours ?? 24) * 3_600_000;
         this._activities = raw
             .map((item) => {
@@ -185,7 +205,7 @@ class ActivityManagerCard extends LitElement {
                         : html`
                             <ha-icon-button
                                 .label=${"Back"}
-                                @click=${() => { this._panel = "view"; this._editing = null; this._manageView = "list"; }}
+                                @click=${() => this._closeManage()}
                             >
                                 <ha-icon icon="mdi:close"></ha-icon>
                             </ha-icon-button>
@@ -228,10 +248,7 @@ class ActivityManagerCard extends LitElement {
     }
 
     _showDoneDialog(activity) {
-        console.log("[AM] _showDoneDialog called", activity?.name, "current _confirming:", this._confirming);
         this._confirming = activity;
-        console.log("[AM] _confirming set to", this._confirming?.name);
-        this.requestUpdate();
     }
 
     // -----------------------------------------------------------------------
@@ -242,14 +259,14 @@ class ActivityManagerCard extends LitElement {
         const a = this._confirming;
         const now = localDatetimeValue();
         return html`
-            <div class="done-panel">
-                <div class="done-hero">
-                    <div class="done-hero-icon">
+            <div class="form-panel">
+                <div class="form-hero">
+                    <div class="form-hero-icon">
                         <ha-icon icon="${a.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
                     </div>
-                    <div class="done-hero-text">
-                        <div class="done-hero-name">${a.name}</div>
-                        <div class="done-hero-label">Mark as completed</div>
+                    <div class="form-hero-text">
+                        <div class="form-hero-name">${a.name}</div>
+                        <div class="form-hero-label">Mark as completed</div>
                     </div>
                 </div>
                 <ha-textfield
@@ -273,12 +290,16 @@ class ActivityManagerCard extends LitElement {
         const dtEl = this.shadowRoot.querySelector("#confirm-dt");
         const last_completed = datetimeLocalToISO(dtEl?.value);
         this._confirming = null;
-        await this._hass.callWS({
-            type: "activity_manager/update",
-            entry_id: a.entry_id,
-            item_id: a.id,
-            last_completed,
-        });
+        try {
+            await this._hass.callWS({
+                type: "activity_manager/update",
+                entry_id: a.entry_id,
+                item_id: a.id,
+                last_completed,
+            });
+        } catch (err) {
+            console.error("[ActivityManagerCard] Failed to mark done:", err);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -289,6 +310,12 @@ class ActivityManagerCard extends LitElement {
         this._panel = "manage";
         this._manageView = view;
         this._editing = activity ? { ...activity } : null;
+    }
+
+    _closeManage() {
+        this._panel = "view";
+        this._editing = null;
+        this._manageView = "list";
     }
 
     _renderManagePanel() {
@@ -341,34 +368,22 @@ class ActivityManagerCard extends LitElement {
     // Add form
     // -----------------------------------------------------------------------
 
-    _renderCategoryField(id, value) {
-        return html`
-            <ha-textfield
-                id="${id}"
-                label="Category"
-                .value=${value}
-                style="width:100%"
-                autocomplete="off"
-            ></ha-textfield>
-        `;
-    }
-
     _renderAddForm() {
         const now = localDatetimeValue();
         return html`
-            <div class="done-panel">
-                <div class="done-hero">
-                    <div class="done-hero-icon">
+            <div class="form-panel">
+                <div class="form-hero">
+                    <div class="form-hero-icon">
                         <ha-icon icon="mdi:plus-circle-outline"></ha-icon>
                     </div>
-                    <div class="done-hero-text">
-                        <div class="done-hero-name">New activity</div>
-                        <div class="done-hero-label">Add to this list</div>
+                    <div class="form-hero-text">
+                        <div class="form-hero-name">New activity</div>
+                        <div class="form-hero-label">Add to this list</div>
                     </div>
                 </div>
                 <div class="form-fields">
                     <ha-textfield id="add-name" label="Name" style="width:100%"></ha-textfield>
-                    ${this._renderCategoryField("add-category", this._config.category || "")}
+                    <ha-textfield id="add-category" label="Category" .value=${this._config.category || ""} style="width:100%" autocomplete="off"></ha-textfield>
                     <ha-icon-picker id="add-icon" label="Icon" style="width:100%"></ha-icon-picker>
                     <div class="field-group">
                         <label class="field-label">Frequency</label>
@@ -381,11 +396,23 @@ class ActivityManagerCard extends LitElement {
                     <ha-textfield id="add-last" type="datetime-local" label="Last completed" .value=${now} style="width:100%"></ha-textfield>
                 </div>
                 <div class="form-actions">
-                    <button class="am-btn am-btn-text" @click=${() => this._openManage("list")}>Cancel</button>
+                    <button class="am-btn am-btn-text" @click=${() => this._closeManage()}>Cancel</button>
                     <button class="am-btn am-btn-primary" @click=${this._submitAdd}>Add</button>
                 </div>
             </div>
         `;
+    }
+
+    _readFreq(prefix) {
+        return {
+            days: getNumber(this.shadowRoot.querySelector(`#${prefix}-freq-d`).value),
+            hours: getNumber(this.shadowRoot.querySelector(`#${prefix}-freq-h`).value),
+            minutes: getNumber(this.shadowRoot.querySelector(`#${prefix}-freq-m`).value),
+        };
+    }
+
+    _freqMs(freq) {
+        return freq.days * 86_400_000 + freq.hours * 3_600_000 + freq.minutes * 60_000;
     }
 
     _submitAdd() {
@@ -393,19 +420,14 @@ class ActivityManagerCard extends LitElement {
         const category = this.shadowRoot.querySelector("#add-category");
         const icon = this.shadowRoot.querySelector("#add-icon");
         const lastEl = this.shadowRoot.querySelector("#add-last");
-        const freq = {
-            days: getNumber(this.shadowRoot.querySelector("#add-freq-d").value),
-            hours: getNumber(this.shadowRoot.querySelector("#add-freq-h").value),
-            minutes: getNumber(this.shadowRoot.querySelector("#add-freq-m").value),
-        };
-        const totalMs = freq.days * 86_400_000 + freq.hours * 3_600_000 + freq.minutes * 60_000;
+        const freq = this._readFreq("add");
 
         if (!name.value.trim()) {
             name.setCustomValidity("Required");
             name.reportValidity();
             return;
         }
-        if (totalMs === 0) {
+        if (this._freqMs(freq) === 0) {
             alert("Frequency must be greater than zero.");
             return;
         }
@@ -422,9 +444,9 @@ class ActivityManagerCard extends LitElement {
             frequency: freq,
             icon: icon.value || undefined,
             last_completed: datetimeLocalToISO(lastEl.value),
-        });
+        }).catch((err) => console.error("[ActivityManagerCard] Failed to add activity:", err));
 
-        this._openManage("list");
+        this._closeManage();
     }
 
     // -----------------------------------------------------------------------
@@ -439,19 +461,19 @@ class ActivityManagerCard extends LitElement {
             : localDatetimeValue();
         const freq = typeof a.frequency === "object" ? a.frequency : {};
         return html`
-            <div class="done-panel">
-                <div class="done-hero">
-                    <div class="done-hero-icon">
+            <div class="form-panel">
+                <div class="form-hero">
+                    <div class="form-hero-icon">
                         <ha-icon icon="${a.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
                     </div>
-                    <div class="done-hero-text">
-                        <div class="done-hero-name">${a.name}</div>
-                        <div class="done-hero-label">Edit activity</div>
+                    <div class="form-hero-text">
+                        <div class="form-hero-name">${a.name}</div>
+                        <div class="form-hero-label">Edit activity</div>
                     </div>
                 </div>
                 <div class="form-fields">
                     <ha-textfield id="edit-name" label="Name" value=${a.name} style="width:100%"></ha-textfield>
-                    ${this._renderCategoryField("edit-category", a.category || "")}
+                    <ha-textfield id="edit-category" label="Category" .value=${a.category || ""} style="width:100%" autocomplete="off"></ha-textfield>
                     <ha-icon-picker id="edit-icon" label="Icon" .value=${a.icon || ""} style="width:100%"></ha-icon-picker>
                     <div class="field-group">
                         <label class="field-label">Frequency</label>
@@ -464,7 +486,7 @@ class ActivityManagerCard extends LitElement {
                     <ha-textfield id="edit-last" type="datetime-local" label="Last completed" value=${lastVal} style="width:100%"></ha-textfield>
                 </div>
                 <div class="form-actions">
-                    <button class="am-btn am-btn-text" @click=${() => this._openManage("list")}>Cancel</button>
+                    <button class="am-btn am-btn-text" @click=${() => this._closeManage()}>Cancel</button>
                     <button class="am-btn am-btn-primary" @click=${this._submitEdit}>Save</button>
                 </div>
             </div>
@@ -478,19 +500,14 @@ class ActivityManagerCard extends LitElement {
         const category = this.shadowRoot.querySelector("#edit-category");
         const icon = this.shadowRoot.querySelector("#edit-icon");
         const lastEl = this.shadowRoot.querySelector("#edit-last");
-        const freq = {
-            days: getNumber(this.shadowRoot.querySelector("#edit-freq-d").value),
-            hours: getNumber(this.shadowRoot.querySelector("#edit-freq-h").value),
-            minutes: getNumber(this.shadowRoot.querySelector("#edit-freq-m").value),
-        };
-        const totalMs = freq.days * 86_400_000 + freq.hours * 3_600_000 + freq.minutes * 60_000;
+        const freq = this._readFreq("edit");
 
         if (!name.value.trim()) {
             name.setCustomValidity("Required");
             name.reportValidity();
             return;
         }
-        if (totalMs === 0) {
+        if (this._freqMs(freq) === 0) {
             alert("Frequency must be greater than zero.");
             return;
         }
@@ -504,9 +521,9 @@ class ActivityManagerCard extends LitElement {
             frequency: freq,
             icon: icon.value || undefined,
             last_completed: datetimeLocalToISO(lastEl.value),
-        });
+        }).catch((err) => console.error("[ActivityManagerCard] Failed to update activity:", err));
 
-        this._openManage("list");
+        this._closeManage();
     }
 
     // -----------------------------------------------------------------------
@@ -517,19 +534,19 @@ class ActivityManagerCard extends LitElement {
         const a = this._editing;
         if (!a) return html``;
         return html`
-            <div class="done-panel">
-                <div class="done-hero done-hero-danger">
-                    <div class="done-hero-icon done-hero-icon-danger">
+            <div class="form-panel">
+                <div class="form-hero form-hero-danger">
+                    <div class="form-hero-icon form-hero-icon-danger">
                         <ha-icon icon="${a.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
                     </div>
-                    <div class="done-hero-text">
-                        <div class="done-hero-name">${a.name}</div>
-                        <div class="done-hero-label done-hero-label-danger">Remove activity?</div>
+                    <div class="form-hero-text">
+                        <div class="form-hero-name">${a.name}</div>
+                        <div class="form-hero-label form-hero-label-danger">Remove activity?</div>
                     </div>
                 </div>
                 <p class="delete-body">This will be permanently removed from <em>${a.list_title || "this list"}</em>.</p>
                 <div class="form-actions">
-                    <button class="am-btn am-btn-text" @click=${() => this._openManage("list")}>Cancel</button>
+                    <button class="am-btn am-btn-text" @click=${() => this._closeManage()}>Cancel</button>
                     <button class="am-btn am-btn-danger" @click=${this._submitDelete}>Remove</button>
                 </div>
             </div>
@@ -543,8 +560,8 @@ class ActivityManagerCard extends LitElement {
             type: "activity_manager/remove",
             entry_id: a.entry_id,
             item_id: a.id,
-        });
-        this._openManage("list");
+        }).catch((err) => console.error("[ActivityManagerCard] Failed to remove activity:", err));
+        this._closeManage();
     }
 
     // -----------------------------------------------------------------------
@@ -750,18 +767,17 @@ class ActivityManagerCard extends LitElement {
             display: flex;
             align-items: center;
             flex-shrink: 0;
-            gap: 0;
         }
         .delete-btn-icon {
             color: var(--error-color, #db4437);
         }
 
         /* ---- Danger hero variants ---- */
-        .done-hero-icon-danger {
+        .form-hero-icon-danger {
             background: rgba(var(--rgb-error-color, 219,68,55), 0.12);
             color: var(--error-color, #db4437);
         }
-        .done-hero-label-danger {
+        .form-hero-label-danger {
             color: var(--error-color, #db4437);
         }
 
@@ -805,21 +821,21 @@ class ActivityManagerCard extends LitElement {
         }
 
         /* ---- Mark Done panel ---- */
-        .done-panel {
+        .form-panel {
             display: flex;
             flex-direction: column;
             gap: 16px;
             width: 100%;
             box-sizing: border-box;
         }
-        .done-hero {
+        .form-hero {
             display: flex;
             align-items: center;
             gap: 14px;
             padding: 4px 0 8px;
             border-bottom: 1px solid var(--divider-color, rgba(0,0,0,.12));
         }
-        .done-hero-icon {
+        .form-hero-icon {
             display: flex;
             align-items: center;
             justify-content: center;
@@ -831,13 +847,13 @@ class ActivityManagerCard extends LitElement {
             color: var(--primary-color);
             --mdc-icon-size: 24px;
         }
-        .done-hero-text {
+        .form-hero-text {
             display: flex;
             flex-direction: column;
             gap: 2px;
             min-width: 0;
         }
-        .done-hero-name {
+        .form-hero-name {
             font-size: 15px;
             font-weight: 600;
             color: var(--primary-text-color);
@@ -845,7 +861,7 @@ class ActivityManagerCard extends LitElement {
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .done-hero-label {
+        .form-hero-label {
             font-size: 12px;
             color: var(--secondary-text-color);
         }
