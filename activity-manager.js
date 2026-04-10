@@ -51,6 +51,26 @@ function statusClass(activity, soonMs) {
     return "ok";
 }
 
+// Returns 0–1: how far through the interval (1 = due now, >1 = overdue, clamped to 1 for arc)
+function progressFraction(item) {
+    if (!item.frequency_ms || item.frequency_ms <= 0) return 0;
+    const elapsed = item.frequency_ms - item.difference;
+    return Math.max(0, Math.min(1, elapsed / item.frequency_ms));
+}
+
+// SVG arc path for a circle progress ring. r = radius, fraction = 0–1.
+function arcPath(r, fraction) {
+    if (fraction >= 1) {
+        // Full circle — two arcs to avoid degenerate path
+        return `M ${r} 0 A ${r} ${r} 0 1 1 ${r - 0.001} 0 Z`;
+    }
+    const angle = fraction * 2 * Math.PI - Math.PI / 2;
+    const x = r + r * Math.cos(angle);
+    const y = r + r * Math.sin(angle);
+    const large = fraction > 0.5 ? 1 : 0;
+    return `M ${r} 0 A ${r} ${r} 0 ${large} 1 ${x} ${y}`;
+}
+
 // ---------------------------------------------------------------------------
 // Main card
 // ---------------------------------------------------------------------------
@@ -99,6 +119,7 @@ class ActivityManagerCard extends LitElement {
             category: config.category || null,
             showDueOnly: config.showDueOnly || false,
             soonHours: config.soonHours != null ? config.soonHours : 24,
+            compact: config.compact || false,
         };
     }
 
@@ -234,15 +255,36 @@ class ActivityManagerCard extends LitElement {
     }
 
     _renderActivityRow(activity) {
+        const compact = this._config.compact;
+        const frac = progressFraction(activity);
+        const R = compact ? 14 : 18;
+        const stroke = compact ? 2 : 2.5;
+        const size = (R + stroke) * 2;
+        const cx = size / 2;
         return html`
-            <div class="activity-row status-${activity._status}" @click=${() => this._showDoneDialog(activity)}>
-                <div class="activity-icon-wrap status-bg-${activity._status}">
+            <div class="activity-row status-${activity._status} ${compact ? "compact" : ""}"
+                 @click=${() => this._showDoneDialog(activity)}>
+                <div class="activity-icon-wrap status-bg-${activity._status} ${compact ? "compact" : ""}">
+                    <svg class="progress-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                        <circle
+                            class="progress-ring-track"
+                            cx="${cx}" cy="${cx}" r="${R}"
+                            fill="none" stroke-width="${stroke}"
+                        />
+                        <path
+                            class="progress-ring-arc status-arc-${activity._status}"
+                            d="${arcPath(R, frac)}"
+                            fill="none" stroke-width="${stroke}"
+                            transform="translate(${stroke}, ${stroke})"
+                        />
+                    </svg>
                     <ha-icon icon="${activity.icon || "mdi:checkbox-marked-circle-outline"}"></ha-icon>
                 </div>
                 <div class="activity-info">
                     <span class="activity-name">${activity.name}</span>
-                    <span class="activity-sub">${activity.category} · ${formatRelative(activity.due)}</span>
+                    ${compact ? "" : html`<span class="activity-sub">${activity.category} · ${formatRelative(activity.due)}</span>`}
                 </div>
+                ${compact ? html`<span class="activity-due-compact">${formatRelative(activity.due)}</span>` : ""}
             </div>
         `;
     }
@@ -667,6 +709,7 @@ class ActivityManagerCard extends LitElement {
         }
 
         .activity-icon-wrap {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -678,12 +721,59 @@ class ActivityManagerCard extends LitElement {
             color: var(--am-ok-color);
             --mdc-icon-size: 20px;
         }
+        .activity-icon-wrap.compact {
+            width: 28px;
+            height: 28px;
+            --mdc-icon-size: 16px;
+        }
         .activity-icon-wrap.status-bg-overdue {
             background: rgba(var(--rgb-error-color, 219,68,55), 0.15);
             color: var(--am-overdue-color);
         }
         .activity-icon-wrap.status-bg-soon {
             background: rgba(var(--rgb-warning-color, 255,152,0), 0.15);
+            color: var(--am-soon-color);
+        }
+
+        /* ---- Progress ring ---- */
+        .progress-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            overflow: visible;
+            pointer-events: none;
+        }
+        .progress-ring-track {
+            stroke: rgba(var(--rgb-disabled-color, 189,189,189), 0.25);
+        }
+        .progress-ring-arc {
+            stroke: var(--am-ok-color);
+            stroke-linecap: round;
+            transition: stroke-dasharray 0.3s ease;
+        }
+        .progress-ring-arc.status-arc-soon {
+            stroke: var(--am-soon-color);
+        }
+        .progress-ring-arc.status-arc-overdue {
+            stroke: var(--am-overdue-color);
+        }
+
+        /* ---- Compact mode ---- */
+        .activity-row.compact {
+            padding: 6px 10px;
+        }
+        .activity-due-compact {
+            font-size: 11px;
+            color: var(--secondary-text-color);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .activity-row.compact.status-overdue .activity-due-compact {
+            color: var(--am-overdue-color);
+            font-weight: 500;
+        }
+        .activity-row.compact.status-soon .activity-due-compact {
             color: var(--am-soon-color);
         }
 
@@ -991,6 +1081,7 @@ class ActivityManagerCardEditor extends LitElement {
             header: v.header,
             icon: v.icon,
             showDueOnly: v.showDueOnly,
+            compact: v.compact,
             soonHours: v.soonHours,
         };
         this._config = config;
@@ -1029,6 +1120,7 @@ class ActivityManagerCardEditor extends LitElement {
                         { name: "header", selector: { text: {} } },
                         { name: "icon", selector: { icon: {} } },
                         { name: "showDueOnly", selector: { boolean: {} } },
+                        { name: "compact", selector: { boolean: {} } },
                         { name: "soonHours", selector: { number: { unit_of_measurement: "hours", min: 0 } } },
                     ]}
                     .computeLabel=${(s) => ({
@@ -1036,6 +1128,7 @@ class ActivityManagerCardEditor extends LitElement {
                         header: "Card title",
                         icon: "Card icon",
                         showDueOnly: "Only show overdue/due-soon activities",
+                        compact: "Compact mode (smaller rows)",
                         soonHours: "\"Due soon\" threshold",
                     }[s.name] ?? s.name)}
                     @value-changed=${this._valueChanged}
