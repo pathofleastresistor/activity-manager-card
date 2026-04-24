@@ -120,6 +120,7 @@ class ActivityManagerCard extends LitElement {
             showDueOnly: config.showDueOnly || false,
             soonHours: config.soonHours != null ? config.soonHours : 24,
             compact: config.compact || false,
+            sortByDueDiff: config.sortByDueDiff || false,
         };
     }
 
@@ -183,8 +184,13 @@ class ActivityManagerCard extends LitElement {
             .filter((item) => !this._config.category || item.category === this._config.category)
             .filter((item) => !this._config.showDueOnly || item.difference < 0)
             .sort((a, b) => {
-                const catCmp = a.category.toLowerCase().localeCompare(b.category.toLowerCase());
-                return catCmp !== 0 ? catCmp : a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+                const diff = a.difference - b.difference;
+                if ((!this._config.sortByDueDiff) || (diff === 0)) {
+                    const catCmp = a.category.toLowerCase().localeCompare(b.category.toLowerCase());
+                    return catCmp !== 0 ? catCmp : a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+                } else {
+                    return diff;
+                }
             });
     };
 
@@ -1083,6 +1089,7 @@ class ActivityManagerCardEditor extends LitElement {
             showDueOnly: v.showDueOnly,
             compact: v.compact,
             soonHours: v.soonHours,
+            sortByDueDiff: v.sortByDueDiff,
         };
         this._config = config;
         this.dispatchEvent(new CustomEvent("config-changed", {
@@ -1120,6 +1127,7 @@ class ActivityManagerCardEditor extends LitElement {
                         { name: "header", selector: { text: {} } },
                         { name: "icon", selector: { icon: {} } },
                         { name: "showDueOnly", selector: { boolean: {} } },
+                        { name: "sortByDueDiff", selector: { boolean: {} } },
                         { name: "compact", selector: { boolean: {} } },
                         { name: "soonHours", selector: { number: { unit_of_measurement: "hours", min: 0 } } },
                     ]}
@@ -1128,6 +1136,7 @@ class ActivityManagerCardEditor extends LitElement {
                         header: "Card title",
                         icon: "Card icon",
                         showDueOnly: "Only show overdue/due-soon activities",
+                        sortByDueDiff: "Sort activities by due time difference",
                         compact: "Compact mode (smaller rows)",
                         soonHours: "\"Due soon\" threshold",
                     }[s.name] ?? s.name)}
