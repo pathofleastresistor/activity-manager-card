@@ -311,13 +311,13 @@ class ActivityManagerCard extends LitElement {
                         <div class="form-hero-label">Mark as completed</div>
                     </div>
                 </div>
-                <ha-textfield
+                <ha-input
                     id="confirm-dt"
                     type="datetime-local"
                     label="Completed at"
                     .value=${now}
                     style="width:100%"
-                ></ha-textfield>
+                ></ha-input>
                 <div class="form-actions">
                     <button class="am-btn am-btn-text" @click=${() => { this._confirming = null; }}>Cancel</button>
                     <button class="am-btn am-btn-primary" @click=${this._submitDone}>Mark Done</button>
@@ -424,18 +424,18 @@ class ActivityManagerCard extends LitElement {
                     </div>
                 </div>
                 <div class="form-fields">
-                    <ha-textfield id="add-name" label="Name" style="width:100%"></ha-textfield>
-                    <ha-textfield id="add-category" label="Category" .value=${this._config.category || ""} style="width:100%" autocomplete="off"></ha-textfield>
+                    <ha-input id="add-name" label="Name" style="width:100%"></ha-input>
+                    <ha-input id="add-category" label="Category" .value=${this._config.category || ""} style="width:100%" autocomplete="off"></ha-input>
                     <ha-icon-picker id="add-icon" label="Icon" style="width:100%"></ha-icon-picker>
                     <div class="field-group">
                         <label class="field-label">Frequency</label>
                         <div class="duration-row">
-                            <ha-textfield id="add-freq-d" label="days"  type="number" inputmode="numeric" no-spinner value="0"></ha-textfield>
-                            <ha-textfield id="add-freq-h" label="hours" type="number" inputmode="numeric" no-spinner value="0"></ha-textfield>
-                            <ha-textfield id="add-freq-m" label="min"   type="number" inputmode="numeric" no-spinner value="0"></ha-textfield>
+                            <ha-input id="add-freq-d" label="days"  type="number" inputmode="numeric" without-spin-buttons value="0"></ha-input>
+                            <ha-input id="add-freq-h" label="hours" type="number" inputmode="numeric" without-spin-buttons value="0"></ha-input>
+                            <ha-input id="add-freq-m" label="min"   type="number" inputmode="numeric" without-spin-buttons value="0"></ha-input>
                         </div>
                     </div>
-                    <ha-textfield id="add-last" type="datetime-local" label="Last completed" .value=${now} style="width:100%"></ha-textfield>
+                    <ha-input id="add-last" type="datetime-local" label="Last completed" .value=${now} style="width:100%"></ha-input>
                 </div>
                 <div class="form-actions">
                     <button class="am-btn am-btn-text" @click=${() => this._closeManage()}>Cancel</button>
@@ -514,18 +514,18 @@ class ActivityManagerCard extends LitElement {
                     </div>
                 </div>
                 <div class="form-fields">
-                    <ha-textfield id="edit-name" label="Name" value=${a.name} style="width:100%"></ha-textfield>
-                    <ha-textfield id="edit-category" label="Category" .value=${a.category || ""} style="width:100%" autocomplete="off"></ha-textfield>
+                    <ha-input id="edit-name" label="Name" value=${a.name} style="width:100%"></ha-input>
+                    <ha-input id="edit-category" label="Category" .value=${a.category || ""} style="width:100%" autocomplete="off"></ha-input>
                     <ha-icon-picker id="edit-icon" label="Icon" .value=${a.icon || ""} style="width:100%"></ha-icon-picker>
                     <div class="field-group">
                         <label class="field-label">Frequency</label>
                         <div class="duration-row">
-                            <ha-textfield id="edit-freq-d" label="days"  type="number" inputmode="numeric" no-spinner value=${String(freq.days || 0)}></ha-textfield>
-                            <ha-textfield id="edit-freq-h" label="hours" type="number" inputmode="numeric" no-spinner value=${String(freq.hours || 0)}></ha-textfield>
-                            <ha-textfield id="edit-freq-m" label="min"   type="number" inputmode="numeric" no-spinner value=${String(freq.minutes || 0)}></ha-textfield>
+                            <ha-input id="edit-freq-d" label="days"  type="number" inputmode="numeric" without-spin-buttons value=${String(freq.days || 0)}></ha-input>
+                            <ha-input id="edit-freq-h" label="hours" type="number" inputmode="numeric" without-spin-buttons value=${String(freq.hours || 0)}></ha-input>
+                            <ha-input id="edit-freq-m" label="min"   type="number" inputmode="numeric" without-spin-buttons value=${String(freq.minutes || 0)}></ha-input>
                         </div>
                     </div>
-                    <ha-textfield id="edit-last" type="datetime-local" label="Last completed" value=${lastVal} style="width:100%"></ha-textfield>
+                    <ha-input id="edit-last" type="datetime-local" label="Last completed" value=${lastVal} style="width:100%"></ha-input>
                 </div>
                 <div class="form-actions">
                     <button class="am-btn am-btn-text" @click=${() => this._closeManage()}>Cancel</button>
@@ -898,7 +898,7 @@ class ActivityManagerCard extends LitElement {
             gap: 8px;
             width: 100%;
         }
-        .duration-row ha-textfield {
+        .duration-row ha-input {
             flex: 1;
             min-width: 0;
         }
