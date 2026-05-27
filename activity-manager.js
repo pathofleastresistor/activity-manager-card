@@ -112,10 +112,13 @@ class ActivityManagerCard extends LitElement {
     }
 
     setConfig(config) {
+        if (!config?.entry_id) {
+            throw new Error("Please select an activity list.");
+        }
         this._config = {
             header: config.header || config.category || "Activities",
             icon: config.icon || "mdi:format-list-checkbox",
-            entry_id: config.entry_id || null,
+            entry_id: config.entry_id,
             category: config.category || null,
             showDueOnly: config.showDueOnly || false,
             soonHours: config.soonHours != null ? config.soonHours : 24,
@@ -1096,90 +1099,45 @@ class ActivityManagerCardEditor extends LitElement {
         if (!this._hass || !this._config) return html``;
         const lists = this._getLists();
         const categories = this._getCategories();
+        const noLists = lists.length === 0;
 
         return html`
-            <div class="editor">
-                <div class="editor-row">
-                    <label>Activity list</label>
-                    <select class="editor-select" .value=${this._config.entry_id ?? ""} @change=${this._listChanged}>
-                        <option value="" ?selected=${!this._config.entry_id}>— choose a list —</option>
-                        ${lists.map((l) => html`
-                            <option value=${l.value} ?selected=${this._config.entry_id === l.value}>${l.label}</option>
-                        `)}
-                    </select>
-                    ${lists.length === 0 ? html`<span class="editor-hint">No lists found. Add an Activity Manager integration first.</span>` : html``}
-                </div>
-                <ha-form
-                    .hass=${this._hass}
-                    .data=${this._config}
-                    .schema=${[
-                        {
-                            name: "category",
-                            selector: { select: { options: categories, custom_value: true } },
-                        },
-                        { name: "header", selector: { text: {} } },
-                        { name: "icon", selector: { icon: {} } },
-                        { name: "showDueOnly", selector: { boolean: {} } },
-                        { name: "compact", selector: { boolean: {} } },
-                        { name: "soonHours", selector: { number: { unit_of_measurement: "hours", min: 0 } } },
-                    ]}
-                    .computeLabel=${(s) => ({
-                        category: "Filter by category (optional)",
-                        header: "Card title",
-                        icon: "Card icon",
-                        showDueOnly: "Only show overdue/due-soon activities",
-                        compact: "Compact mode (smaller rows)",
-                        soonHours: "\"Due soon\" threshold",
-                    }[s.name] ?? s.name)}
-                    @value-changed=${this._valueChanged}
-                ></ha-form>
-            </div>
+            <ha-form
+                .hass=${this._hass}
+                .data=${this._config}
+                .schema=${[
+                    {
+                        name: "entry_id",
+                        required: true,
+                        selector: { select: { options: lists, mode: "dropdown" } },
+                    },
+                    {
+                        name: "category",
+                        selector: { select: { options: categories, custom_value: true } },
+                    },
+                    { name: "header", selector: { text: {} } },
+                    { name: "icon", selector: { icon: {} } },
+                    { name: "showDueOnly", selector: { boolean: {} } },
+                    { name: "compact", selector: { boolean: {} } },
+                    { name: "soonHours", selector: { number: { unit_of_measurement: "hours", min: 0 } } },
+                ]}
+                .computeLabel=${(s) => ({
+                    entry_id: "Activity list",
+                    category: "Filter by category (optional)",
+                    header: "Card title",
+                    icon: "Card icon",
+                    showDueOnly: "Only show overdue/due-soon activities",
+                    compact: "Compact mode (smaller rows)",
+                    soonHours: "\"Due soon\" threshold",
+                }[s.name] ?? s.name)}
+                .computeHelper=${(s) =>
+                    s.name === "entry_id" && noLists
+                        ? "No lists found. Add an Activity Manager integration first."
+                        : undefined}
+                @value-changed=${this._valueChanged}
+            ></ha-form>
         `;
     }
-
-    _listChanged(ev) {
-        const entry_id = ev.target.value || null;
-        const config = { ...this._config, entry_id };
-        this._config = config;
-        this.dispatchEvent(new CustomEvent("config-changed", {
-            detail: { config },
-            bubbles: true,
-            composed: true,
-        }));
-    }
-
-    static styles = css`
-        .editor {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .editor-row {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            padding: 8px 0;
-        }
-        .editor-row label {
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--secondary-text-color);
-        }
-        .editor-select {
-            width: 100%;
-            padding: 8px 10px;
-            border-radius: 6px;
-            border: 1px solid var(--divider-color, rgba(0,0,0,.2));
-            background: var(--card-background-color, #fff);
-            color: var(--primary-text-color);
-            font-size: 14px;
-            font-family: inherit;
-        }
-        .editor-hint {
-            font-size: 12px;
-            color: var(--warning-color, #ff9800);
-        }
-    `;
 }
 
 // ---------------------------------------------------------------------------
