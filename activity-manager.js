@@ -123,6 +123,7 @@ class ActivityManagerCard extends LitElement {
             showDueOnly: config.showDueOnly || false,
             soonHours: config.soonHours != null ? config.soonHours : 24,
             compact: config.compact || false,
+            sortBy: config.sortBy || "category",
         };
     }
 
@@ -186,8 +187,16 @@ class ActivityManagerCard extends LitElement {
             .filter((item) => !this._config.category || item.category === this._config.category)
             .filter((item) => !this._config.showDueOnly || item.difference < 0)
             .sort((a, b) => {
-                const catCmp = a.category.toLowerCase().localeCompare(b.category.toLowerCase());
-                return catCmp !== 0 ? catCmp : a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+                if (this._config.sortBy === "name") {
+                    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+                }
+                if (this._config.sortBy === "category") {
+                    const catCmp = a.category.toLowerCase().localeCompare(b.category.toLowerCase());
+                    return catCmp !== 0 ? catCmp : a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+                }
+                // Default: soonest due first (overdue at top, then by ascending due date)
+                if (a.difference !== b.difference) return a.difference - b.difference;
+                return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
             });
     };
 
@@ -1086,6 +1095,7 @@ class ActivityManagerCardEditor extends LitElement {
             showDueOnly: v.showDueOnly,
             compact: v.compact,
             soonHours: v.soonHours,
+            sortBy: v.sortBy,
         };
         this._config = config;
         this.dispatchEvent(new CustomEvent("config-changed", {
@@ -1120,6 +1130,19 @@ class ActivityManagerCardEditor extends LitElement {
                     { name: "showDueOnly", selector: { boolean: {} } },
                     { name: "compact", selector: { boolean: {} } },
                     { name: "soonHours", selector: { number: { unit_of_measurement: "hours", min: 0 } } },
+                    {
+                        name: "sortBy",
+                        selector: {
+                            select: {
+                                mode: "dropdown",
+                                options: [
+                                    { value: "due", label: "Soonest due" },
+                                    { value: "category", label: "Category, then name" },
+                                    { value: "name", label: "Name" },
+                                ],
+                            },
+                        },
+                    },
                 ]}
                 .computeLabel=${(s) => ({
                     entry_id: "Activity list",
@@ -1129,6 +1152,7 @@ class ActivityManagerCardEditor extends LitElement {
                     showDueOnly: "Only show overdue/due-soon activities",
                     compact: "Compact mode (smaller rows)",
                     soonHours: "\"Due soon\" threshold",
+                    sortBy: "Sort order",
                 }[s.name] ?? s.name)}
                 .computeHelper=${(s) =>
                     s.name === "entry_id" && noLists
