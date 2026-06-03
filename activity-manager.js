@@ -185,7 +185,7 @@ class ActivityManagerCard extends LitElement {
                 return { ...item, due, difference, _status: statusClass({ difference }, soonMs) };
             })
             .filter((item) => !this._config.category || item.category === this._config.category)
-            .filter((item) => !this._config.showDueOnly || item.difference < 0)
+            .filter((item) => !this._config.showDueOnly || item._status !== "ok")
             .sort((a, b) => {
                 if (this._config.sortBy === "name") {
                     return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
