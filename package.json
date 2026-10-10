@@ -1,0 +1,13 @@
+{
+  "name": "activity-manager-card",
+  "private": true,
+  "description": "Dev-only test harness. The card itself is the single file activity-manager.js and has no build step.",
+  "type": "module",
+  "scripts": {
+    "test": "node --conditions=browser --import ./tests/register.js --test \"tests/*.test.js\""
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0",
+    "lit": "2.8.0"
+  }
+}
