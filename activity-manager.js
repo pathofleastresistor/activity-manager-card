@@ -2,6 +2,7 @@ import {
     LitElement,
     html,
     css,
+    nothing,
 } from "https://unpkg.com/lit@2.8.0/index.js?module";
 import { repeat } from "https://unpkg.com/lit@2.8.0/directives/repeat.js?module";
 
@@ -71,6 +72,69 @@ function arcPath(r, fraction) {
     return `M ${r} 0 A ${r} ${r} 0 ${large} 1 ${x} ${y}`;
 }
 
+// Counts for the "summary" mode. `items` need a `due` Date and a `name`. These are the same
+// definitions the Activity Manager integration uses for its summary sensors: "overdue" is due
+// now or earlier, "due" is overdue plus anything coming due within the soon window (so
+// due >= overdue), and "next due" is the earliest due date (in the past while overdue).
+export function summarizeActivities(items, soonMs, now = Date.now()) {
+    const sorted = [...items].sort(
+        (a, b) => a.due - b.due || a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+    );
+    const overdue = sorted.filter((a) => a.due.valueOf() <= now);
+    const due = sorted.filter((a) => a.due.valueOf() <= now + soonMs);
+    return {
+        total: sorted.length,
+        overdueCount: overdue.length,
+        dueCount: due.length,
+        overdueNames: overdue.map((a) => a.name),
+        dueNames: due.map((a) => a.name),
+        next: sorted[0] || null,
+    };
+}
+
+// Milliseconds until the next moment an activity becomes due or enters the soon window,
+// or null if nothing will change. Used to refresh the summary tile as time passes.
+export function nextTransitionDelay(items, soonMs, now = Date.now()) {
+    let next = Infinity;
+    for (const { due } of items) {
+        for (const t of [due.valueOf(), due.valueOf() - soonMs]) {
+            if (t > now && t < next) next = t;
+        }
+    }
+    return next === Infinity ? null : next - now;
+}
+
+// Runs a Lovelace-style tap_action. Supports navigate, url, more-info and none.
+export function runTapAction(node, action) {
+    switch (action?.action) {
+        case "navigate":
+            if (!action.navigation_path) return;
+            if (action.navigation_replace) {
+                history.replaceState(null, "", action.navigation_path);
+            } else {
+                history.pushState(null, "", action.navigation_path);
+            }
+            window.dispatchEvent(new CustomEvent("location-changed", {
+                detail: { replace: Boolean(action.navigation_replace) },
+            }));
+            return;
+        case "url":
+            if (action.url_path) window.open(action.url_path, "_blank", "noopener");
+            return;
+        case "more-info":
+            if (action.entity) {
+                node.dispatchEvent(new CustomEvent("hass-more-info", {
+                    bubbles: true,
+                    composed: true,
+                    detail: { entityId: action.entity },
+                }));
+            }
+            return;
+        default:
+            return;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Main card
 // ---------------------------------------------------------------------------
@@ -97,6 +161,8 @@ class ActivityManagerCard extends LitElement {
             _manageView: { attribute: false },
             // Activity pending "mark done" confirmation (null = dialog closed)
             _confirming: { attribute: false },
+            // Counts shown by summary mode
+            _summary: { attribute: false },
         };
     }
 
@@ -109,6 +175,9 @@ class ActivityManagerCard extends LitElement {
         this._confirming = null;
         this._unsubEvents = null;
         this._disconnected = false;
+        this._scoped = [];
+        this._summary = null;
+        this._tickTimer = null;
     }
 
     setConfig(config) {
@@ -124,7 +193,19 @@ class ActivityManagerCard extends LitElement {
             soonHours: config.soonHours != null ? config.soonHours : 24,
             compact: config.compact || false,
             sortBy: config.sortBy || "category",
+            // "list" (default, the original card) | "summary" (one compact tile row)
+            mode: config.mode === "summary" ? "summary" : "list",
+            tap_action: config.tap_action || null,
         };
+        if (this._config.mode === "summary") {
+            // Size hints for the dashboard layout; the list card keeps its defaults.
+            this.getCardSize = () => 1;
+            this.getGridOptions = () => ({ columns: 6, rows: 1, min_columns: 3, min_rows: 1 });
+        } else {
+            delete this.getCardSize;
+            delete this.getGridOptions;
+        }
+        this._scheduleTick();
     }
 
     firstUpdated() {
@@ -134,6 +215,7 @@ class ActivityManagerCard extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         this._disconnected = false;
+        this._scheduleTick();
     }
 
     disconnectedCallback() {
@@ -141,6 +223,8 @@ class ActivityManagerCard extends LitElement {
         this._disconnected = true;
         this._unsubEvents?.();
         this._unsubEvents = null;
+        clearTimeout(this._tickTimer);
+        this._tickTimer = null;
     }
 
     set hass(hass) {
@@ -177,14 +261,16 @@ class ActivityManagerCard extends LitElement {
             return;
         }
         const soonMs = (this._config.soonHours ?? 24) * 3_600_000;
-        this._activities = raw
+        this._scoped = raw
             .map((item) => {
                 const completed = new Date(item.last_completed);
                 const due = new Date(completed.valueOf() + item.frequency_ms);
                 const difference = due - Date.now();
                 return { ...item, due, difference, _status: statusClass({ difference }, soonMs) };
             })
-            .filter((item) => !this._config.category || item.category === this._config.category)
+            .filter((item) => !this._config.category || item.category === this._config.category);
+        this._updateSummary();
+        this._activities = this._scoped
             .filter((item) => !this._config.showDueOnly || item._status !== "ok")
             .sort((a, b) => {
                 if (this._config.sortBy === "name") {
@@ -200,12 +286,44 @@ class ActivityManagerCard extends LitElement {
             });
     };
 
+    // Summary mode only: recompute the counts and re-arm the timer that refreshes them
+    // when an activity becomes due or overdue (no data event fires for that).
+    _updateSummary() {
+        if (this._config?.mode !== "summary") return;
+        const soonMs = (this._config.soonHours ?? 24) * 3_600_000;
+        this._summary = summarizeActivities(this._scoped, soonMs);
+        this._scheduleTick();
+    }
+
+    _scheduleTick() {
+        clearTimeout(this._tickTimer);
+        this._tickTimer = null;
+        if (this._config?.mode !== "summary" || this._disconnected) return;
+        const soonMs = (this._config.soonHours ?? 24) * 3_600_000;
+        const delay = nextTransitionDelay(this._scoped, soonMs);
+        if (delay === null) return;
+        // Cap at ~24 days (setTimeout limit) and add a little slack so we land just after the boundary.
+        this._tickTimer = setTimeout(() => this._updateSummary(), Math.min(delay + 50, 2_000_000_000));
+    }
+
+    _onSummaryTap() {
+        runTapAction(this, this._config.tap_action);
+    }
+
+    _onSummaryKey(ev) {
+        if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            this._onSummaryTap();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Render
     // -----------------------------------------------------------------------
 
     render() {
         if (!this._config) return html``;
+        if (this._config.mode === "summary") return this._renderSummary();
         return html`
             <ha-card>
                 ${this._renderHeader()}
@@ -245,6 +363,49 @@ class ActivityManagerCard extends LitElement {
                         `}
                 </div>
             </div>
+        `;
+    }
+
+    // -----------------------------------------------------------------------
+    // Summary mode — one tile-style row
+    // -----------------------------------------------------------------------
+
+    _renderSummary() {
+        const { header, icon, tap_action } = this._config;
+        const s = this._summary;
+        const actionable = Boolean(tap_action?.action && tap_action.action !== "none");
+        const status = !s ? "ok" : s.overdueCount > 0 ? "overdue" : s.dueCount > 0 ? "soon" : "ok";
+        const dueCount = s?.dueCount ?? 0;
+        const overdueCount = s?.overdueCount ?? 0;
+        let secondary = "";
+        if (s) {
+            if (s.dueCount > 0) secondary = s.dueNames.join(", ");
+            else if (s.next) secondary = `Next: ${s.next.name} · ${formatRelative(s.next.due)}`;
+            else secondary = "No activities";
+        }
+        return html`
+            <ha-card>
+                <div
+                    class="summary-row status-${status} ${actionable ? "actionable" : ""}"
+                    role=${actionable ? "button" : nothing}
+                    tabindex=${actionable ? "0" : nothing}
+                    aria-label="${header}: ${dueCount} due, ${overdueCount} overdue"
+                    @click=${actionable ? this._onSummaryTap : nothing}
+                    @keydown=${actionable ? this._onSummaryKey : nothing}
+                >
+                    <div class="activity-icon-wrap status-bg-${status}">
+                        <ha-icon icon="${icon}"></ha-icon>
+                    </div>
+                    <div class="activity-info">
+                        <span class="activity-name">${header}</span>
+                        <span class="summary-sub">${secondary}</span>
+                    </div>
+                    <div class="summary-badges">
+                        <span class="summary-badge ${dueCount > 0 ? "badge-due" : ""}">${dueCount} due</span>
+                        <span class="summary-badge ${overdueCount > 0 ? "badge-overdue" : ""}">${overdueCount} overdue</span>
+                    </div>
+                </div>
+            </ha-card>
         `;
     }
 
@@ -1011,6 +1172,62 @@ class ActivityManagerCard extends LitElement {
         .am-btn-danger:hover {
             opacity: 0.88;
         }
+
+        /* ---- Summary mode ---- */
+        .summary-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            min-height: 40px;
+        }
+        .summary-row.actionable {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .summary-row.actionable:hover {
+            background: rgba(var(--rgb-primary-color, 33,150,243), 0.06);
+        }
+        .summary-row.actionable:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: -2px;
+        }
+        .summary-sub {
+            font-size: 12px;
+            color: var(--secondary-text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .summary-row.status-overdue .summary-sub {
+            color: var(--am-overdue-color);
+        }
+        .summary-row.status-soon .summary-sub {
+            color: var(--am-soon-color);
+        }
+        .summary-badges {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .summary-badge {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            color: var(--secondary-text-color);
+            background: rgba(var(--rgb-disabled-color, 189,189,189), 0.2);
+        }
+        .summary-badge.badge-due {
+            color: var(--am-soon-color);
+            background: rgba(var(--rgb-warning-color, 255,152,0), 0.15);
+        }
+        .summary-badge.badge-overdue {
+            color: var(--am-overdue-color);
+            background: rgba(var(--rgb-error-color, 219,68,55), 0.15);
+        }
     `;
 }
 
@@ -1096,7 +1313,13 @@ class ActivityManagerCardEditor extends LitElement {
             compact: v.compact,
             soonHours: v.soonHours,
             sortBy: v.sortBy,
+            mode: v.mode,
+            tap_action: v.tap_action,
         };
+        // Keep configs written for the original card byte-for-byte unchanged: only write the
+        // summary-mode keys when they carry a value.
+        if (!config.mode || config.mode === "list") delete config.mode;
+        if (!config.tap_action) delete config.tap_action;
         this._config = config;
         this.dispatchEvent(new CustomEvent("config-changed", {
             detail: { config },
@@ -1111,39 +1334,60 @@ class ActivityManagerCardEditor extends LitElement {
         const categories = this._getCategories();
         const noLists = lists.length === 0;
 
+        const summary = this._config.mode === "summary";
+        const schema = [
+            {
+                name: "entry_id",
+                required: true,
+                selector: { select: { options: lists, mode: "dropdown" } },
+            },
+            {
+                name: "mode",
+                selector: {
+                    select: {
+                        mode: "dropdown",
+                        options: [
+                            { value: "list", label: "List (full card)" },
+                            { value: "summary", label: "Summary (one tile row)" },
+                        ],
+                    },
+                },
+            },
+            {
+                name: "category",
+                selector: { select: { options: categories, custom_value: true } },
+            },
+            { name: "header", selector: { text: {} } },
+            { name: "icon", selector: { icon: {} } },
+            ...(summary
+                ? [{ name: "tap_action", selector: { ui_action: {} } }]
+                : [
+                    { name: "showDueOnly", selector: { boolean: {} } },
+                    { name: "compact", selector: { boolean: {} } },
+                ]),
+            { name: "soonHours", selector: { number: { unit_of_measurement: "hours", min: 0 } } },
+            ...(summary
+                ? []
+                : [{
+                    name: "sortBy",
+                    selector: {
+                        select: {
+                            mode: "dropdown",
+                            options: [
+                                { value: "due", label: "Soonest due" },
+                                { value: "category", label: "Category, then name" },
+                                { value: "name", label: "Name" },
+                            ],
+                        },
+                    },
+                }]),
+        ];
+
         return html`
             <ha-form
                 .hass=${this._hass}
-                .data=${this._config}
-                .schema=${[
-                    {
-                        name: "entry_id",
-                        required: true,
-                        selector: { select: { options: lists, mode: "dropdown" } },
-                    },
-                    {
-                        name: "category",
-                        selector: { select: { options: categories, custom_value: true } },
-                    },
-                    { name: "header", selector: { text: {} } },
-                    { name: "icon", selector: { icon: {} } },
-                    { name: "showDueOnly", selector: { boolean: {} } },
-                    { name: "compact", selector: { boolean: {} } },
-                    { name: "soonHours", selector: { number: { unit_of_measurement: "hours", min: 0 } } },
-                    {
-                        name: "sortBy",
-                        selector: {
-                            select: {
-                                mode: "dropdown",
-                                options: [
-                                    { value: "due", label: "Soonest due" },
-                                    { value: "category", label: "Category, then name" },
-                                    { value: "name", label: "Name" },
-                                ],
-                            },
-                        },
-                    },
-                ]}
+                .data=${{ mode: "list", ...this._config }}
+                .schema=${schema}
                 .computeLabel=${(s) => ({
                     entry_id: "Activity list",
                     category: "Filter by category (optional)",
@@ -1153,6 +1397,8 @@ class ActivityManagerCardEditor extends LitElement {
                     compact: "Compact mode (smaller rows)",
                     soonHours: "\"Due soon\" threshold",
                     sortBy: "Sort order",
+                    mode: "Display mode",
+                    tap_action: "Tap action",
                 }[s.name] ?? s.name)}
                 .computeHelper=${(s) =>
                     s.name === "entry_id" && noLists
